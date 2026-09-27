@@ -10,9 +10,18 @@
 .brand { display: flex; align-items: center; padding: 0 8px; }
 .logo { display: inline-flex; align-items: center; gap: 10px; }
 .numera-mark { flex: none; display: block; }
-.logo-text { display: grid; line-height: 1.05; }
-.logo-brand { font-weight: 800; font-size: 1.05rem; letter-spacing: .12em; color: var(--text); }
-.logo-product { font-weight: 700; font-size: .68rem; letter-spacing: .32em; color: var(--brand-green); }
+.logo-text { display: grid; line-height: 1; }
+.logo-brand {
+  font-family: 'Montserrat', system-ui, sans-serif; font-weight: 800; font-size: 1.35rem;
+  letter-spacing: -.01em; color: var(--nm-word);
+}
+/* Le « r » porte le trait vert montant du logo. */
+.logo-r { position: relative; }
+.logo-r::after {
+  content: ''; position: absolute; left: .18em; top: .36em; width: .4em; height: .14em;
+  background: var(--nm-green); border-radius: .07em; transform: rotate(-40deg); transform-origin: left center;
+}
+.logo-product { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 700; font-size: .62rem; letter-spacing: .3em; color: var(--nm-tagline); margin-top: 4px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 .sidebar nav a {
   padding: 8px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 500;
