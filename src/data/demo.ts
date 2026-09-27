@@ -1,5 +1,5 @@
 import type {
-  BrandVoice, ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect, RelationalProfile,
+  Approval, BrandVoice, ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect, RelationalProfile,
 } from '../lib/types'
 import { analyzeWithRules } from '../lib/channelAdvisor'
 
@@ -50,7 +50,7 @@ export const demoConversations: Conversation[] = [
   {
     id: 'c1', prospect_id: 'r7', channel: 'whatsapp', prospect_name: 'Mireille N.',
     last_message_preview: 'Vous livrez à Bonamoussadi avant samedi ?', last_message_at: ago(4),
-    last_inbound_at: ago(4), unread_count: 2,
+    last_inbound_at: ago(4), unread_count: 2, ai_paused: false, ai_paused_reason: null,
   },
   {
     id: 'c2', prospect_id: 'r8', channel: 'instagram', prospect_name: 'estelle_design',
@@ -68,6 +68,7 @@ export const demoMessages: Message[] = [
   { id: 'm2', conversation_id: 'c1', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(18), body: 'Bonsoir Mireille ! Oui, la robe bleue se fait sur mesure, donc le 42 ne pose aucun souci. C\'est pour une occasion particulière ?' },
   { id: 'm3', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(6), body: 'Pour un mariage le 12. C\'est combien ?' },
   { id: 'm4', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(4), body: 'Vous livrez à Bonamoussadi avant samedi ?' },
+  { id: 'm9', conversation_id: 'c1', direction: 'outbound', status: 'pending_approval', ai_generated: true, sent_at: ago(3), body: 'La robe bleue sur mesure est à 25 000 FCFA, et la livraison à Bonamoussadi coûte 2 000 FCFA. Elle peut être prête jeudi, donc avant samedi 😊 On la lance ?' },
   { id: 'm5', conversation_id: 'c2', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(55), body: 'INFO' },
   { id: 'm6', conversation_id: 'c3', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(60 * 31), body: 'Bonjour, vous avez des ensembles pour couple ?' },
   { id: 'm7', conversation_id: 'c3', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(60 * 30.5), body: 'Bonjour Paul ! Oui, nous faisons des ensembles assortis homme/femme. Je vous envoie quelques modèles ?' },
@@ -127,3 +128,16 @@ export const demoProfiles: Record<string, RelationalProfile> = {
     version: 1,
   }),
 }
+
+export const demoApprovals: Approval[] = [
+  {
+    id: 'ap1', message_id: 'm9', conversation_id: 'c1', prospect_id: 'r7', prospect_name: 'Mireille N.',
+    channel: 'whatsapp', topics: ['prix'], created_at: ago(3),
+    proposed_body: 'La robe bleue sur mesure est à 25 000 FCFA, et la livraison à Bonamoussadi coûte 2 000 FCFA. Elle peut être prête jeudi, donc avant samedi 😊 On la lance ?',
+    expires_at: new Date(Date.now() + (24 * 60 - 4) * 60_000).toISOString(),
+    context: [
+      { from: 'prospect', text: 'Pour un mariage le 12. C\'est combien ?' },
+      { from: 'prospect', text: 'Vous livrez à Bonamoussadi avant samedi ?' },
+    ],
+  },
+]

@@ -1,5 +1,5 @@
 {
-  "name": "01 · Meta inbound (messages + commentaires)",
+  "name": "01 · Meta inbound (messages, commentaires, échos du téléphone)",
   "nodes": [
     {
       "id": "a1",
@@ -153,7 +153,7 @@
         400
       ],
       "parameters": {
-        "jsCode": "// Transforme l'enveloppe Meta en une liste d'événements normalisés :\n//   kind = 'message' : message privé reçu (Messenger, Instagram, WhatsApp)\n//   kind = 'comment' : commentaire sur une publication (Facebook, Instagram)\nconst { object, body } = $input.first().json;\nconst out = [];\nconst iso = (ms) => new Date(Number(ms)).toISOString();\n\nfor (const entry of body.entry || []) {\n  if (object === 'page' || object === 'instagram') {\n    const channel = object === 'page' ? 'facebook' : 'instagram';\n    for (const ev of entry.messaging || []) {\n      const m = ev.message;\n      if (!m || m.is_echo) continue; // ignorer nos propres messages\n      out.push({\n        kind: 'message',\n        channel,\n        account_external_id: String(ev.recipient.id),\n        external_user_id: String(ev.sender.id),\n        display_name: null, // enrichi plus tard via l'API Profil\n        external_message_id: m.mid,\n        body: m.text || (m.attachments ? '[pièce jointe]' : '[message non textuel]'),\n        sent_at: iso(ev.timestamp),\n      });\n    }\n\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      // Facebook : field = feed, item = comment, verb = add\n      if (channel === 'facebook' && change.field === 'feed' && v.item === 'comment' && v.verb === 'add') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.comment_id),\n          post_id: v.post_id ? String(v.post_id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.name : null,\n          body: v.message || '',\n        });\n      }\n      // Instagram : field = comments\n      if (channel === 'instagram' && change.field === 'comments') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.id),\n          post_id: v.media ? String(v.media.id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.username : null,\n          body: v.text || '',\n        });\n      }\n    }\n  }\n\n  if (object === 'whatsapp_business_account') {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const names = Object.fromEntries(\n        (v.contacts || []).map((c) => [c.wa_id, c.profile && c.profile.name])\n      );\n      for (const m of v.messages || []) {\n        out.push({\n          kind: 'message',\n          channel: 'whatsapp',\n          account_external_id: String(v.metadata.phone_number_id),\n          external_user_id: String(m.from),\n          display_name: names[m.from] || null,\n          external_message_id: m.id,\n          body: m.type === 'text' ? m.text.body : `[${m.type} non pris en charge]`,\n          sent_at: iso(Number(m.timestamp) * 1000),\n        });\n      }\n      // v.statuses (sent/delivered/read) seront traités en Partie 5.\n    }\n  }\n}\n\nreturn out.map((json) => ({ json }));\n"
+        "jsCode": "// Transforme l'enveloppe Meta en une liste d'événements normalisés :\n//   kind = 'message' : message privé reçu (Messenger, Instagram, WhatsApp)\n//   kind = 'comment' : commentaire sur une publication (Facebook, Instagram)\nconst { object, body } = $input.first().json;\nconst out = [];\nconst iso = (ms) => new Date(Number(ms)).toISOString();\n\nfor (const entry of body.entry || []) {\n  if (object === 'page' || object === 'instagram') {\n    const channel = object === 'page' ? 'facebook' : 'instagram';\n    for (const ev of entry.messaging || []) {\n      const m = ev.message;\n      if (!m || m.is_echo) continue; // ignorer nos propres messages\n      out.push({\n        kind: 'message',\n        channel,\n        account_external_id: String(ev.recipient.id),\n        external_user_id: String(ev.sender.id),\n        display_name: null, // enrichi plus tard via l'API Profil\n        external_message_id: m.mid,\n        body: m.text || (m.attachments ? '[pièce jointe]' : '[message non textuel]'),\n        sent_at: iso(ev.timestamp),\n      });\n    }\n\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      // Facebook : field = feed, item = comment, verb = add\n      if (channel === 'facebook' && change.field === 'feed' && v.item === 'comment' && v.verb === 'add') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.comment_id),\n          post_id: v.post_id ? String(v.post_id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.name : null,\n          body: v.message || '',\n        });\n      }\n      // Instagram : field = comments\n      if (channel === 'instagram' && change.field === 'comments') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.id),\n          post_id: v.media ? String(v.media.id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.username : null,\n          body: v.text || '',\n        });\n      }\n    }\n  }\n\n  if (object === 'whatsapp_business_account') {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const names = Object.fromEntries(\n        (v.contacts || []).map((c) => [c.wa_id, c.profile && c.profile.name])\n      );\n      for (const m of v.messages || []) {\n        out.push({\n          kind: 'message',\n          channel: 'whatsapp',\n          account_external_id: String(v.metadata.phone_number_id),\n          external_user_id: String(m.from),\n          display_name: names[m.from] || null,\n          external_message_id: m.id,\n          body: m.type === 'text' ? m.text.body : `[${m.type} non pris en charge]`,\n          sent_at: iso(Number(m.timestamp) * 1000),\n        });\n      }\n      // Coexistence : messages envoyés par l'utilisateur depuis son application WhatsApp.\n      if (change.field === 'smb_message_echoes') {\n        for (const m of v.message_echoes || []) {\n          out.push({\n            kind: 'echo',\n            channel: 'whatsapp',\n            account_external_id: String(v.metadata.phone_number_id),\n            to: String(m.to),\n            external_message_id: m.id,\n            body: m.type === 'text' ? m.text.body : `[${m.type}]`,\n            sent_at: iso(Number(m.timestamp) * 1000),\n          });\n        }\n      }\n      // v.statuses (sent/delivered/read) : suivi de lecture, Partie 7.\n    }\n  }\n}\n\nreturn out.map((json) => ({ json }));\n"
       }
     },
     {
@@ -162,8 +162,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        880,
-        320
+        1100,
+        300
       ],
       "parameters": {
         "method": "POST",
@@ -328,6 +328,58 @@
         "jsonBody": "={{ JSON.stringify({ p_message: $('Supabase · handle_comment').item.json.message_id, p_status: 'failed', p_error: $json.error ? JSON.stringify($json.error) : 'Erreur Graph API' }) }}",
         "options": {}
       }
+    },
+    {
+      "id": "b12",
+      "name": "Écho ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "e1",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "echo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b13",
+      "name": "Supabase · ingest_outbound_echo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/ingest_outbound_echo",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  p_account_external_id: $json.account_external_id,\n  p_to: $json.to,\n  p_external_message_id: $json.external_message_id,\n  p_body: $json.body,\n  p_sent_at: $json.sent_at\n}) }}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -409,7 +461,7 @@
         ],
         [
           {
-            "node": "Supabase · ingest_inbound_message",
+            "node": "Écho ?",
             "type": "main",
             "index": 0
           }
@@ -451,6 +503,24 @@
         [
           {
             "node": "Marquer réponse en échec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Écho ?": {
+      "main": [
+        [
+          {
+            "node": "Supabase · ingest_outbound_echo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supabase · ingest_inbound_message",
             "type": "main",
             "index": 0
           }

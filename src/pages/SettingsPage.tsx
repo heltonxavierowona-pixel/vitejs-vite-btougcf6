@@ -23,11 +23,25 @@ function AutomationForm() {
         setSaved(true)
       }}
     >
-      <h2>Bascule vers WhatsApp</h2>
+      <h2>Automatisation</h2>
       <p className="muted small">
         WhatsApp n'est proposé que lorsque l'intérêt est clair et explicite. Les réponses neutres ou négatives
         sont archivées sans relance ; une demande d'arrêt bloque définitivement le contact.
       </p>
+      <label className="check">
+        <input type="checkbox" checked={a.autopilot_whatsapp} onChange={(e) => update({ autopilot_whatsapp: e.target.checked })} />
+        <span>
+          Pilote automatique sur WhatsApp
+          <small className="muted">L'IA répond seule, en texte. Prix, remise, devis, contrat et paiement passent par « Validations ».</small>
+        </span>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={a.autopilot_social} onChange={(e) => update({ autopilot_social: e.target.checked })} />
+        <span>
+          Pilote automatique aussi sur Messenger et Instagram
+          <small className="muted">Désactivé par défaut : ces canaux servent surtout à amener le prospect vers WhatsApp.</small>
+        </span>
+      </label>
       <label className="check">
         <input type="checkbox" checked={a.handoff_auto} onChange={(e) => update({ handoff_auto: e.target.checked })} />
         <span>

@@ -1,5 +1,5 @@
 {
-  "name": "03 · Intention + profil relationnel (à chaque message reçu)",
+  "name": "03 · Intention, profil, pilote automatique (à chaque message reçu)",
   "nodes": [
     {
       "id": "p1",
@@ -98,6 +98,34 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ conversation_id: $('Filtrer messages reçus').item.json.conversation_id }) }}",
         "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "p6",
+      "name": "Edge Function · autopilot-reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/functions/v1/autopilot-reply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-closer-secret",
+              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ conversation_id: $('Filtrer messages reçus').item.json.conversation_id }) }}",
+        "options": {}
       }
     }
   ],
@@ -140,6 +168,17 @@
         [
           {
             "node": "Edge Function · update-profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edge Function · update-profile": {
+      "main": [
+        [
+          {
+            "node": "Edge Function · autopilot-reply",
             "type": "main",
             "index": 0
           }

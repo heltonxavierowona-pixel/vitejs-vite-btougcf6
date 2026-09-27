@@ -3,18 +3,18 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AiDraft, Automation, BrandVoice, DraftKind, Intent, IntentOutcome, RelationalProfile,
+  AiDraft, Approval, Automation, BrandVoice, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
 } from './types'
 import type { ChannelId } from '../data/channels'
 import {
   demoAccounts, demoBrandVoice, demoConversations, demoEntryLinks, demoMessages, demoProducts, demoProfiles,
-  demoProspects, demoTriggers,
+  demoProspects, demoTriggers, demoApprovals,
 } from '../data/demo'
 import { demoDraft } from './demoWriter'
 import { classifyWithRules } from './intentRules'
-import { insertHandoffLink, whatsappLink } from '../../supabase/functions/_shared/prompts.ts'
+import { detectSensitive, insertHandoffLink, MEDIA_PLACEHOLDER, whatsappLink } from '../../supabase/functions/_shared/prompts.ts'
 
 // Couche de données unique : Supabase si configuré, sinon données de démo en mémoire.
 export const isDemo = !supabase
@@ -30,7 +30,8 @@ const demo = {
   outreachProfile: 'new' as OutreachProfile,
   profiles: { ...demoProfiles },
   brandVoice: { ...demoBrandVoice },
-  automation: { handoff_auto: true, min_confidence: 0.7 } as Automation,
+  automation: { handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false } as Automation,
+  approvals: [...demoApprovals],
 }
 
 function unwrap<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
@@ -116,6 +117,8 @@ export async function connectMeta(code: string) {
 interface ConversationRow {
   id: string
   prospect_id: string
+  ai_paused: boolean
+  ai_paused_reason: string | null
   last_message_preview: string | null
   last_message_at: string | null
   last_inbound_at: string | null
@@ -131,13 +134,15 @@ export async function listConversations(): Promise<Conversation[]> {
   const rows = unwrap(
     await supabase
       .from('conversations')
-      .select('id, prospect_id, last_message_preview, last_message_at, last_inbound_at, unread_count, channel_accounts(channel), prospects(full_name)')
+      .select('id, prospect_id, ai_paused, ai_paused_reason, last_message_preview, last_message_at, last_inbound_at, unread_count, channel_accounts(channel), prospects(full_name)')
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .returns<ConversationRow[]>(),
   )
   return rows.map((r) => ({
     id: r.id,
     prospect_id: r.prospect_id,
+    ai_paused: r.ai_paused,
+    ai_paused_reason: r.ai_paused_reason,
     channel: r.channel_accounts?.channel ?? 'whatsapp',
     prospect_name: r.prospects?.full_name ?? 'Contact',
     last_message_preview: r.last_message_preview,
@@ -175,7 +180,9 @@ export async function sendMessage(conversationId: string, body: string): Promise
     }
     demo.messages = [...demo.messages, msg]
     demo.conversations = demo.conversations.map((c) =>
-      c.id === conversationId ? { ...c, last_message_preview: body, last_message_at: msg.sent_at } : c)
+      c.id === conversationId
+        ? { ...c, last_message_preview: body, last_message_at: msg.sent_at, ai_paused: true, ai_paused_reason: 'human_reply' }
+        : c)
     return
   }
   unwrap(await supabase.rpc('send_from_inbox', { p_conversation: conversationId, p_body: body }))
@@ -426,7 +433,7 @@ export async function markDraftUsed(draft: AiDraft, index: number) {
 export async function getAutomation(): Promise<Automation> {
   if (!supabase) return demo.automation
   const { data } = await supabase.from('organizations').select('automation').limit(1).single()
-  return { handoff_auto: true, min_confidence: 0.7, ...(data?.automation ?? {}) } as Automation
+  return { handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false, ...(data?.automation ?? {}) } as Automation
 }
 
 export async function saveAutomation(a: Automation) {
@@ -518,4 +525,142 @@ export async function analyzeAssistedReply(prospect: Prospect, text: string): Pr
 export async function resolveReview(prospectId: string, intent: Intent): Promise<string> {
   if (!supabase) return applyIntentDemo(prospectId, intent, 1, null)
   return unwrap(await supabase.rpc('resolve_review', { p_prospect: prospectId, p_intent: intent })) as string
+}
+
+// ---------- Pilote automatique & validations (Partie 5) ----------
+
+// Signal local pour rafraîchir le badge « Validations » sans attendre.
+export const APPROVALS_CHANGED = 'closer:approvals-changed'
+const notifyApprovals = () => window.dispatchEvent(new Event(APPROVALS_CHANGED))
+
+export async function setAiPaused(conversationId: string, paused: boolean) {
+  const patch = { ai_paused: paused, ai_paused_reason: paused ? 'manual' : null }
+  if (!supabase) {
+    demo.conversations = demo.conversations.map((c) => (c.id === conversationId ? { ...c, ...patch } : c))
+    return
+  }
+  unwrap(await supabase.from('conversations')
+    .update({ ...patch, ai_paused_at: paused ? new Date().toISOString() : null }).eq('id', conversationId))
+}
+
+interface ApprovalRow {
+  id: string; message_id: string; conversation_id: string; prospect_id: string; topics: string[]
+  proposed_body: string; expires_at: string | null; created_at: string
+  prospects: { full_name: string | null } | null
+  conversations: { channel_accounts: { channel: ChannelId } | null } | null
+}
+
+export async function listApprovals(): Promise<Approval[]> {
+  if (!supabase) return demo.approvals
+  const rows = unwrap(await supabase.from('approvals')
+    .select('id, message_id, conversation_id, prospect_id, topics, proposed_body, expires_at, created_at, prospects(full_name), conversations(channel_accounts(channel))')
+    .is('decision', null).order('created_at').returns<ApprovalRow[]>())
+  return Promise.all(rows.map(async (r) => {
+    const { data } = await supabase!.from('messages').select('direction, body')
+      .eq('conversation_id', r.conversation_id).eq('direction', 'inbound').order('sent_at', { ascending: false }).limit(3)
+    return {
+      id: r.id, message_id: r.message_id, conversation_id: r.conversation_id, prospect_id: r.prospect_id,
+      prospect_name: r.prospects?.full_name ?? 'Contact', channel: r.conversations?.channel_accounts?.channel ?? 'whatsapp',
+      topics: r.topics, proposed_body: r.proposed_body, expires_at: r.expires_at, created_at: r.created_at,
+      context: (data ?? []).reverse().map((m) => ({ from: 'prospect' as const, text: m.body })),
+    }
+  }))
+}
+
+export async function countPendingApprovals(): Promise<number> {
+  if (!supabase) return demo.approvals.length
+  const { count } = await supabase.from('approvals').select('id', { count: 'exact', head: true }).is('decision', null)
+  return count ?? 0
+}
+
+export async function decideApproval(id: string, decision: 'approve' | 'edit' | 'reject', body?: string) {
+  try {
+    await decideApprovalInner(id, decision, body)
+  } finally {
+    notifyApprovals()
+  }
+}
+
+async function decideApprovalInner(id: string, decision: 'approve' | 'edit' | 'reject', body?: string) {
+  if (!supabase) {
+    const ap = demo.approvals.find((a) => a.id === id)
+    if (!ap) return
+    demo.approvals = demo.approvals.filter((a) => a.id !== id)
+    demo.messages = demo.messages.map((m) => m.id !== ap.message_id ? m : {
+      ...m,
+      status: decision === 'reject' ? 'rejected' : 'sent',
+      body: decision === 'edit' && body?.trim() ? body.trim() : m.body,
+    })
+    if (decision !== 'reject') {
+      const msg = demo.messages.find((m) => m.id === ap.message_id)!
+      demo.conversations = demo.conversations.map((c) => c.id === ap.conversation_id
+        ? { ...c, last_message_preview: msg.body, last_message_at: new Date().toISOString() } : c)
+    }
+    return
+  }
+  unwrap(await supabase.rpc('decide_approval', { p_approval: id, p_decision: decision, p_body: body ?? null }))
+}
+
+export async function listMergeCandidates(excludeId: string): Promise<{ id: string; full_name: string | null; source: string | null }[]> {
+  if (!supabase) return demo.prospects.filter((p) => p.id !== excludeId).map((p) => ({ id: p.id, full_name: p.full_name, source: p.source }))
+  return unwrap(await supabase.from('prospects').select('id, full_name, source').neq('id', excludeId)
+    .is('deleted_at', null).order('created_at', { ascending: false }).limit(200))
+}
+
+export async function mergeProspects(keepId: string, mergeId: string) {
+  if (!supabase) {
+    demo.conversations = demo.conversations.map((c) => (c.prospect_id === mergeId ? { ...c, prospect_id: keepId } : c))
+    demo.prospects = demo.prospects.filter((p) => p.id !== mergeId)
+    return
+  }
+  unwrap(await supabase.rpc('merge_prospects', { p_keep: keepId, p_merge: mergeId }))
+}
+
+// Mode démo uniquement : simule un message du client pour voir le pilote automatique agir.
+export async function simulateClientMessage(conversationId: string, text: string): Promise<string> {
+  const conv = demo.conversations.find((c) => c.id === conversationId)
+  if (!conv) return 'none'
+  const now = new Date().toISOString()
+  demo.messages = [...demo.messages, {
+    id: crypto.randomUUID(), conversation_id: conversationId, direction: 'inbound', status: 'received',
+    ai_generated: false, sent_at: now, body: text,
+  }]
+  demo.conversations = demo.conversations.map((c) => c.id === conversationId
+    ? { ...c, last_inbound_at: now, last_message_at: now, last_message_preview: text } : c)
+
+  const enabled = conv.channel === 'whatsapp' ? demo.automation.autopilot_whatsapp
+    : (conv.channel === 'facebook' || conv.channel === 'instagram') && demo.automation.autopilot_social
+  if (!enabled || conv.ai_paused) return 'skipped'
+
+  const pause = (reason: string) => {
+    demo.conversations = demo.conversations.map((c) => c.id === conversationId
+      ? { ...c, ai_paused: true, ai_paused_reason: `escalation:${reason}` } : c)
+    return 'escalated'
+  }
+  if (MEDIA_PLACEHOLDER.test(text.trim())) return pause('message non textuel (vocal, image…)')
+  if (/(humain|quelqu'un|conseill|responsable|real person|someone|pas content|arnaque|remboursez)/i.test(text)) {
+    return pause('demande à parler à un humain ou mécontentement')
+  }
+
+  const draft = await draftMessage({ kind: 'reply', prospect: { id: conv.prospect_id, full_name: conv.prospect_name }, conversation: conv })
+  const body = draft.variants[0].text
+  const topics = [...new Set([...draft.sensitive.topics, ...detectSensitive(body), ...detectSensitive(text)])]
+  const reply = {
+    id: crypto.randomUUID(), conversation_id: conversationId, direction: 'outbound' as const,
+    status: topics.length ? 'pending_approval' : 'sent', ai_generated: true,
+    sent_at: new Date(Date.now() + 1000).toISOString(), body,
+  }
+  demo.messages = [...demo.messages, reply]
+  if (topics.length) {
+    demo.approvals = [...demo.approvals, {
+      id: crypto.randomUUID(), message_id: reply.id, conversation_id: conversationId, prospect_id: conv.prospect_id,
+      prospect_name: conv.prospect_name, channel: conv.channel, topics, proposed_body: body, created_at: reply.sent_at,
+      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(), context: [{ from: 'prospect', text }],
+    }]
+    notifyApprovals()
+    return 'pending_approval'
+  }
+  demo.conversations = demo.conversations.map((c) => c.id === conversationId
+    ? { ...c, last_message_preview: body, last_message_at: reply.sent_at } : c)
+  return 'sent'
 }

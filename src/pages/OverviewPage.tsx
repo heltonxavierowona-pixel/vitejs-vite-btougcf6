@@ -23,8 +23,8 @@ const PARTS = [
   { n: 1, title: 'Fondations SaaS : comptes, produits, connexion des canaux, boîte de réception', status: 'done' },
   { n: 2, title: 'Ciblage & sourcing par produit', status: 'done' },
   { n: 3, title: 'Cerveau IA : rédaction, ton adapté, multilingue, profil relationnel', status: 'done' },
-  { n: 4, title: 'Détection d\'intérêt & bascule WhatsApp', status: 'review' },
-  { n: 5, title: 'Conversation IA autonome & validations', status: 'todo' },
+  { n: 4, title: 'Détection d\'intérêt & bascule WhatsApp', status: 'done' },
+  { n: 5, title: 'Conversation WhatsApp autonome & validations (prix, contrat)', status: 'review' },
   { n: 6, title: 'Closing & relances (modèles WhatsApp)', status: 'todo' },
   { n: 7, title: 'Tableau de bord & alertes', status: 'todo' },
 ] as const

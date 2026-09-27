@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import ChannelsPage from './pages/ChannelsPage'
@@ -9,6 +9,8 @@ import OverviewPage from './pages/OverviewPage'
 import ProductsPage from './pages/ProductsPage'
 import ProspectsPage from './pages/ProspectsPage'
 import SettingsPage from './pages/SettingsPage'
+import ValidationsPage from './pages/ValidationsPage'
+import { APPROVALS_CHANGED, countPendingApprovals } from './lib/api'
 import UpcomingPage from './pages/UpcomingPage'
 import './App.css'
 
@@ -34,8 +36,27 @@ function useSession() {
   return session
 }
 
+// Nombre de réponses IA en attente de validation (badge du menu).
+function usePendingApprovals(enabled: boolean) {
+  const location = useLocation()
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const update = () => countPendingApprovals().then(setCount).catch(() => {})
+    update()
+    const timer = setInterval(update, 30_000)
+    window.addEventListener(APPROVALS_CHANGED, update)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(APPROVALS_CHANGED, update)
+    }
+  }, [enabled, location.pathname])
+  return count
+}
+
 export default function App() {
   const session = useSession()
+  const pending = usePendingApprovals(!supabase || !!session)
 
   if (supabase && session === undefined) return null
   if (supabase && !session) return <LoginPage />
@@ -50,6 +71,7 @@ export default function App() {
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}>
               {n.label}
+              {n.to === '/validations' && pending > 0 && <span className="nav-badge">{pending}</span>}
             </NavLink>
           ))}
         </nav>
@@ -73,16 +95,7 @@ export default function App() {
           <Route path="/conversations" element={<InboxPage />} />
           <Route path="/prospects" element={<ProspectsPage />} />
           <Route path="/parametres" element={<SettingsPage />} />
-          <Route
-            path="/validations"
-            element={
-              <UpcomingPage
-                part={5}
-                title="Validations"
-                description="Messages rédigés par l'IA sur le prix ou le contrat, en attente de votre accord avant envoi."
-              />
-            }
-          />
+          <Route path="/validations" element={<ValidationsPage />} />
           <Route
             path="/rapports"
             element={

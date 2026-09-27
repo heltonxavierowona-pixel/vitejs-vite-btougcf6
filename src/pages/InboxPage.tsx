@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ChannelBadge from '../components/ChannelBadge'
 import DraftPanel from '../components/DraftPanel'
 import ProfilePanel from '../components/ProfilePanel'
 import {
-  draftMessage, getProfile, isDemo, listConversations, logAssistedMessage, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
+  draftMessage, getProfile, isDemo, listConversations, listMergeCandidates, logAssistedMessage, mergeProspects,
+  setAiPaused, simulateClientMessage, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
   subscribeInbox, windowOpen,
 } from '../lib/api'
 import type { AiDraft, Conversation, Message, RelationalProfile } from '../lib/types'
 
 const time = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : ''
+
+function pauseLabel(reason: string | null | undefined): string {
+  if (!reason) return 'IA en pause'
+  if (reason === 'human_reply') return 'Vous avez repris la main'
+  if (reason === 'manual') return 'IA mise en pause'
+  if (reason.startsWith('escalation:')) return `L'IA vous passe la main : ${reason.slice(11)}`
+  return 'IA en pause'
+}
 
 const STATUS_ICON: Record<string, string> = {
   queued: '🕓', sent: '✓', delivered: '✓✓', read: '✓✓', failed: '⚠️', pending_approval: '⏸',
@@ -24,6 +34,9 @@ export default function InboxPage() {
   const [suggestion, setSuggestion] = useState<AiDraft | null>(null)
   const [suggesting, setSuggesting] = useState(false)
   const [profile, setProfile] = useState<RelationalProfile | null>(null)
+  const [simText, setSimText] = useState('')
+  const [simResult, setSimResult] = useState<string | null>(null)
+  const [mergeList, setMergeList] = useState<{ id: string; full_name: string | null; source: string | null }[] | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(
@@ -125,6 +138,8 @@ export default function InboxPage() {
                 setSelected(c.id)
                 setSuggestion(null)
                 setDraft('')
+                setSimResult(null)
+                setMergeList(null)
               }}
             >
               <div className="inbox-item-top">
@@ -145,6 +160,16 @@ export default function InboxPage() {
             <header className="thread-head">
               <strong>{current.prospect_name}</strong>
               <ChannelBadge id={current.channel} />
+              {!assisted && (
+                <label className="switch autopilot" title="Pilote automatique : l'IA répond seule (sauf sujets sensibles)">
+                  <input
+                    type="checkbox"
+                    checked={!current.ai_paused}
+                    onChange={async (e) => { await setAiPaused(current.id, !e.target.checked); refresh() }}
+                  />
+                  Pilote auto
+                </label>
+              )}
               {assisted ? (
                 <span className="window window-open">Mode assisté : copier puis envoyer</span>
               ) : (
@@ -154,12 +179,21 @@ export default function InboxPage() {
               )}
             </header>
 
+            {current.ai_paused && !assisted && (
+              <p className={`pause-banner ${current.ai_paused_reason?.startsWith('escalation:') ? 'escalation' : ''}`}>
+                {pauseLabel(current.ai_paused_reason)}. Réactivez le pilote quand vous voulez.
+              </p>
+            )}
             <div className="thread-body">
               {messages.map((m) => (
-                <div key={m.id} className={`bubble bubble-${m.direction}`}>
+                <div key={m.id} className={`bubble bubble-${m.direction} bubble-${m.status}`}>
                   <p>{m.body}</p>
+                  {m.status === 'pending_approval' && (
+                    <Link className="bubble-pending" to="/validations">En attente de votre validation →</Link>
+                  )}
                   <span className="bubble-meta">
                     {m.ai_generated && 'IA · '}
+                    {m.status === 'rejected' && 'rejeté · '}
                     {time(m.sent_at)}
                     {m.direction === 'outbound' && ` ${STATUS_ICON[m.status] ?? ''}`}
                   </span>
@@ -205,20 +239,72 @@ export default function InboxPage() {
                   <button className="btn" disabled={!open || !draft.trim()}>{assisted ? 'Copier' : 'Envoyer'}</button>
                 </div>
               </div>
+              {!assisted && !current.ai_paused && (
+                <p className="muted small">Si vous répondez vous-même, le pilote automatique se met en pause.</p>
+              )}
             </form>
+            {isDemo && !assisted && (
+              <form
+                className="simulator"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  if (!simText.trim()) return
+                  const r = await simulateClientMessage(current.id, simText.trim())
+                  setSimResult({
+                    sent: 'L\'IA a répondu seule.',
+                    pending_approval: 'Sujet sensible : réponse de l\'IA mise en attente dans Validations.',
+                    escalated: 'L\'IA a passé la main (voir le bandeau).',
+                    skipped: 'Pilote en pause : pas de réponse automatique.',
+                  }[r] ?? r)
+                  setSimText('')
+                  await Promise.all([loadMessages(current.id), refresh()])
+                }}
+              >
+                <span className="muted small">Démo : écrire comme le client</span>
+                <input value={simText} onChange={(e) => setSimText(e.target.value)} placeholder="Ex. Et le prix ? / Je veux parler à quelqu'un / Vous livrez à Yaoundé ?" />
+                <button className="btn btn-ghost">Simuler</button>
+                {simResult && <span className="small sim-result">{simResult}</span>}
+              </form>
+            )}
           </section>
         ) : (
           <section className="thread empty-thread muted">Sélectionnez une conversation</section>
         )}
 
         {current && (
-          <ProfilePanel
-            profile={profile}
-            onRefresh={isDemo ? undefined : async () => {
-              await refreshProfile(current.id)
-              setProfile(await getProfile(current.prospect_id))
-            }}
-          />
+          <div className="side-panel">
+            <ProfilePanel
+              profile={profile}
+              onRefresh={isDemo ? undefined : async () => {
+                await refreshProfile(current.id)
+                setProfile(await getProfile(current.prospect_id))
+              }}
+            />
+            <div className="merge">
+              {mergeList === null ? (
+                <button className="link small" onClick={async () => setMergeList(await listMergeCandidates(current.prospect_id))}>
+                  Même personne qu'une autre fiche ? Fusionner
+                </button>
+              ) : (
+                <label className="small">
+                  Rattacher à {current.prospect_name} la fiche :
+                  <select
+                    defaultValue=""
+                    onChange={async (e) => {
+                      const other = mergeList.find((m) => m.id === e.target.value)
+                      if (!other || !window.confirm(`Fusionner « ${other.full_name ?? 'Sans nom'} » dans « ${current.prospect_name} » ? Ses conversations et son historique seront regroupés.`)) return
+                      await mergeProspects(current.prospect_id, other.id)
+                      setMergeList(null)
+                      refresh()
+                    }}
+                  >
+                    <option value="" disabled>Choisir…</option>
+                    {mergeList.map((m) => <option key={m.id} value={m.id}>{m.full_name ?? 'Sans nom'}{m.source ? ` · ${m.source}` : ''}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </>

@@ -122,6 +122,9 @@ CONTENU
 - Phrases interdites : « J'espère que vous allez bien », « Je me permets de vous contacter »${(v.banned_phrases ?? []).map((p) => `, « ${p} »`).join('')}.
 ${v.signature && kind !== 'reply' ? `- Signature possible si le format le permet : ${v.signature}` : ''}
 
+HONNÊTETÉ
+- Tu es l'assistant de ${v.sender_name ?? 'l\'utilisateur'}. Si on te demande si tu es un robot ou une IA, ne mens jamais : dis que tu es son assistant et que ${v.sender_name ?? 'il ou elle'} peut prendre le relais.
+
 SUJETS SENSIBLES
 Prix, remise, devis, contrat, conditions de paiement, remboursement, engagement juridique :
 - si le prospect en parle ou si ta réponse en parle, mets "sensitive.is" à true et liste les sujets ;
@@ -323,4 +326,73 @@ export function whatsappLink(displayPhone: string, code: string, productName?: s
 // Insère le lien à la place du marqueur (ou à la fin s'il manque).
 export function insertHandoffLink(text: string, link: string): string {
   return text.includes(HANDOFF_PLACEHOLDER) ? text.split(HANDOFF_PLACEHOLDER).join(link) : `${text.trim()}\n${link}`
+}
+
+// ---------- Pilote automatique WhatsApp (Partie 5) ----------
+
+// Filet de sécurité déterministe : s'ajoute au jugement de l'IA, ne le remplace pas.
+const SENSITIVE_PATTERNS: Record<string, RegExp> = {
+  prix: /\b(prix|combien|tarifs?|co[uû]ts?|cher|price|how much|cost)\b|\d[\d\s.,]*\s?(fcfa|xaf|cfa|f\b|€|eur|euros?|\$|usd)/i,
+  remise: /\b(remises?|r[ée]ductions?|promos?|rabais|discounts?|gratuit)\b|\d+\s?%/i,
+  contrat: /\b(contrats?|devis|factures?|bons? de commande|engagements?|conditions g[ée]n[ée]rales|contract|quote|invoice)\b/i,
+  paiement: /\b(paiements?|payer|momo|mobile money|orange money|virements?|acomptes?|avances?|payment|pay)\b/i,
+  remboursement: /\b(rembours\w*|refund|garantie)\b/i,
+}
+
+export function detectSensitive(text: string): string[] {
+  return Object.entries(SENSITIVE_PATTERNS).filter(([, re]) => re.test(text)).map(([topic]) => topic)
+}
+
+// Messages non textuels : l'IA ne les comprend pas, l'humain reprend.
+export const MEDIA_PLACEHOLDER = /^\[(audio|voice|image|video|document|sticker|location|contacts|pièce jointe|message non textuel)[^\]]*\]$/i
+
+export function buildAutopilotSystem(ctx: AiContext): string {
+  const v = ctx.brand_voice ?? {}
+  const base = buildDraftSystem(ctx, 'whatsapp', 'reply')
+    .replace(/Propose \d+ variantes[^\n]*\n/, '')
+    .replace(/Réponds UNIQUEMENT en JSON :[\s\S]*$/, '')
+  return `${base}
+MODE AUTONOME
+Tu réponds seul, en direct, sur WhatsApp. Écris UNE seule réponse, la meilleure.
+Objectif : aider sincèrement et faire avancer vers l'étape suivante (comprendre le besoin, répondre, proposer la présentation quand le prospect est prêt).
+Passe la main à ${v.sender_name ?? 'l\'utilisateur'} (escalate = true) si :
+- le prospect demande à parler à un humain, se plaint ou est mécontent ;
+- la réponse exige une information absente des CONNAISSANCES PRODUIT ;
+- il s'agit d'un cas particulier (réclamation, litige, commande spéciale, urgence).
+Dans ce cas, écris quand même une courte réponse d'attente (« je vérifie avec ${v.sender_name ?? 'l\'équipe'} et je reviens vers vous »).
+
+Réponds UNIQUEMENT en JSON :
+{"text": "", "language": "fr", "formality": "vous", "sensitive": {"is": false, "topics": []}, "escalate": {"is": false, "reason": ""}}`
+}
+
+export interface AutopilotReply {
+  text: string
+  sensitive: boolean
+  topics: string[]
+  escalate: boolean
+  reason: string | null
+}
+
+export function normalizeAutopilot(raw: Record<string, unknown>, lastInbound: string): AutopilotReply {
+  const max = draftFormat('whatsapp', 'reply').max
+  let text = String(raw.text ?? '').trim()
+  if (text.length > max) {
+    const cut = text.slice(0, max)
+    const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '))
+    text = end > max * 0.5 ? cut.slice(0, end + 1) : cut.slice(0, max - 1).trimEnd() + '…'
+  }
+  const s = (raw.sensitive ?? {}) as { is?: unknown; topics?: unknown }
+  const e = (raw.escalate ?? {}) as { is?: unknown; reason?: unknown }
+  const topics = [...new Set([
+    ...(Array.isArray(s.topics) ? s.topics.map(String) : []),
+    ...detectSensitive(text),
+    ...detectSensitive(lastInbound),
+  ])]
+  return {
+    text,
+    sensitive: s.is === true || topics.length > 0,
+    topics,
+    escalate: e.is === true || !text,
+    reason: e.is === true ? String(e.reason ?? 'demande de l\'IA') : !text ? 'réponse vide' : null,
+  }
 }

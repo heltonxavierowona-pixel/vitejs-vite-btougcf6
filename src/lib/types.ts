@@ -50,6 +50,8 @@ export interface Conversation {
   last_message_at: string | null
   last_inbound_at: string | null
   unread_count: number
+  ai_paused?: boolean
+  ai_paused_reason?: string | null
 }
 
 export interface Message {
@@ -172,4 +174,20 @@ export interface IntentOutcome {
 export interface Automation {
   handoff_auto: boolean
   min_confidence: number
+  autopilot_whatsapp: boolean
+  autopilot_social: boolean
+}
+
+export interface Approval {
+  id: string
+  message_id: string
+  conversation_id: string
+  prospect_id: string
+  prospect_name: string
+  channel: ChannelId
+  topics: string[]
+  proposed_body: string
+  expires_at: string | null
+  created_at: string
+  context: { from: 'prospect' | 'nous'; text: string }[]
 }

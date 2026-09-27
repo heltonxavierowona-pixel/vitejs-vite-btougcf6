@@ -1,19 +1,11 @@
 import type { AiDraft, DraftKind, Message, Product, Prospect, RelationalProfile } from './types'
 import type { ChannelId } from '../data/channels'
+import { detectSensitive } from '../../supabase/functions/_shared/prompts.ts'
+
+export { detectSensitive }
 
 // Rédacteur de démonstration : produit des brouillons par modèles quand l'IA
 // n'est pas configurée. En production, c'est l'Edge Function draft-message qui rédige.
-
-const SENSITIVE: Record<string, RegExp> = {
-  prix: /\b(prix|combien|tarif|co[uû]t|cher|price|how much|fcfa|€|\$)\b/i,
-  remise: /\b(remise|r[ée]duction|promo|discount)\b/i,
-  contrat: /\b(contrat|devis|facture|engagement|contract|quote|invoice)\b/i,
-  paiement: /\b(paiement|payer|momo|orange money|virement|acompte|payment)\b/i,
-}
-
-export function detectSensitive(text: string): string[] {
-  return Object.entries(SENSITIVE).filter(([, re]) => re.test(text)).map(([topic]) => topic)
-}
 
 const isEnglish = (text: string) =>
   (text.match(/\b(the|and|you|your|is|are|what|how|please|thanks|hello|hi)\b/gi) ?? []).length >= 2
