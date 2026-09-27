@@ -36,12 +36,14 @@ export interface ProductAnalysis {
 
 export interface Product extends ProductInput {
   id: string
+  knowledge?: string | null
   analysis: ProductAnalysis | null
   analyzed_at: string | null
 }
 
 export interface Conversation {
   id: string
+  prospect_id: string
   channel: ChannelId
   prospect_name: string
   last_message_preview: string | null
@@ -110,4 +112,41 @@ export interface KeywordTrigger {
   reply_text: string
   active: boolean
   matches: number
+}
+
+export type DraftKind = 'invitation' | 'opening' | 'reply'
+
+export interface AiDraft {
+  id: string
+  kind: DraftKind
+  channel: ChannelId
+  language: string
+  formality: 'tu' | 'vous'
+  variants: { text: string; angle: string }[]
+  sensitive: { is: boolean; topics: string[] }
+  rationale: string
+  source: 'ai' | 'demo'
+}
+
+export interface RelationalProfile {
+  language: string | null
+  formality: 'tu' | 'vous' | null
+  tone: string | null
+  style: { length?: string; emojis?: boolean; register?: string }
+  interests: string[]
+  pain_points: string[]
+  objections: string[]
+  preferences: string[]
+  buying_signals: string[]
+  summary: string | null
+  version: number
+  updated_at: string | null
+}
+
+export interface BrandVoice {
+  sender_name?: string
+  signature?: string
+  formality?: 'tu' | 'vous'
+  emojis?: boolean
+  banned_phrases?: string[]
 }

@@ -1,8 +1,9 @@
 // POST { product_id } → analyse IA du produit : cibles, canaux recommandés,
 // ton, langues, accroches. Enregistrée dans products.analysis.
 import { handler, HttpError, json, requireUser, rest } from '../_shared/supabase.ts'
+import { chatJSON, MODELS } from '../_shared/llm.ts'
 
-const MODEL = Deno.env.get('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-4.5'
+const MODEL = MODELS.fast
 
 type Channel = 'linkedin' | 'x' | 'facebook' | 'instagram' | 'whatsapp'
 const ROLE: Record<Channel, { role: string; mode: string }> = {
@@ -55,7 +56,7 @@ interface Product {
 }
 
 Deno.serve(handler(async (req) => {
-  const { jwt } = await requireUser(req)
+  const { jwt, orgId } = await requireUser(req)
   const { product_id } = await req.json()
   if (!product_id) throw new HttpError(400, 'product_id manquant')
 
@@ -63,44 +64,23 @@ Deno.serve(handler(async (req) => {
   const [product] = await rest<Product[]>(`products?id=eq.${product_id}&select=*`, { jwt })
   if (!product) throw new HttpError(404, 'Produit introuvable')
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${Deno.env.get('OPENROUTER_API_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.3,
-      max_tokens: 2000,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            nom: product.name,
-            description: product.description,
-            type_offre: product.offer_type,
-            audience: product.audience,
-            cible_decrite: product.target,
-            pays: product.countries,
-            niveau_prix: product.price_level,
-          }),
-        },
-      ],
+  const parsed = await chatJSON({
+    model: MODEL,
+    system: SYSTEM_PROMPT,
+    user: JSON.stringify({
+      nom: product.name,
+      description: product.description,
+      type_offre: product.offer_type,
+      audience: product.audience,
+      cible_decrite: product.target,
+      pays: product.countries,
+      niveau_prix: product.price_level,
     }),
+    maxTokens: 2000,
+    temperature: 0.3,
+    orgId,
+    feature: 'analyze_product',
   })
-  if (!res.ok) throw new HttpError(502, `OpenRouter: ${await res.text()}`)
-  const completion = await res.json()
-  const raw: string = completion.choices?.[0]?.message?.content ?? ''
-
-  let parsed: Record<string, unknown>
-  try {
-    parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
-  } catch {
-    throw new HttpError(502, 'Réponse IA illisible, réessayez')
-  }
 
   // Garde-fou : rôle et mode imposés par les règles des plateformes.
   const channels = (Array.isArray(parsed.channels) ? parsed.channels : [])

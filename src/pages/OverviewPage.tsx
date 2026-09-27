@@ -21,8 +21,8 @@ const STEPS = [
 
 const PARTS = [
   { n: 1, title: 'Fondations SaaS : comptes, produits, connexion des canaux, boîte de réception', status: 'done' },
-  { n: 2, title: 'Ciblage & sourcing par produit', status: 'review' },
-  { n: 3, title: 'Cerveau IA (ton, langues, profil relationnel)', status: 'todo' },
+  { n: 2, title: 'Ciblage & sourcing par produit', status: 'done' },
+  { n: 3, title: 'Cerveau IA : rédaction, ton adapté, multilingue, profil relationnel', status: 'review' },
   { n: 4, title: 'Détection d\'intérêt & bascule WhatsApp', status: 'todo' },
   { n: 5, title: 'Conversation IA autonome & validations', status: 'todo' },
   { n: 6, title: 'Closing & relances (modèles WhatsApp)', status: 'todo' },

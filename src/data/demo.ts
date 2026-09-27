@@ -1,4 +1,6 @@
-import type { ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect } from '../lib/types'
+import type {
+  BrandVoice, ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect, RelationalProfile,
+} from '../lib/types'
 import { analyzeWithRules } from '../lib/channelAdvisor'
 
 // Données de démonstration : utilisées tant que Supabase n'est pas configuré.
@@ -26,8 +28,16 @@ const boutique = {
 }
 
 export const demoProducts: Product[] = [
-  { id: 'p1', ...coreHr, analysis: analyzeWithRules(coreHr), analyzed_at: ago(60) },
-  { id: 'p2', ...boutique, analysis: analyzeWithRules(boutique), analyzed_at: ago(30) },
+  {
+    id: 'p1', ...coreHr, analysis: analyzeWithRules(coreHr), analyzed_at: ago(60),
+    knowledge: 'Paie conforme CNPS et DIPE. Congés, contrats et dossiers du personnel. Essai gratuit 14 jours. '
+      + 'Mise en place en 1 semaine. Support en français et en anglais.',
+  },
+  {
+    id: 'p2', ...boutique, analysis: analyzeWithRules(boutique), analyzed_at: ago(30),
+    knowledge: 'Robes et ensembles en pagne wax sur mesure. Délai de confection : 7 jours. '
+      + 'Livraison à Douala et Yaoundé : 2 000 FCFA. Robe à partir de 25 000 FCFA. Paiement Mobile Money à la commande.',
+  },
 ]
 
 export const demoAccounts: ChannelAccount[] = [
@@ -38,16 +48,16 @@ export const demoAccounts: ChannelAccount[] = [
 
 export const demoConversations: Conversation[] = [
   {
-    id: 'c1', channel: 'whatsapp', prospect_name: 'Mireille N.',
+    id: 'c1', prospect_id: 'r7', channel: 'whatsapp', prospect_name: 'Mireille N.',
     last_message_preview: 'Vous livrez à Bonamoussadi avant samedi ?', last_message_at: ago(4),
     last_inbound_at: ago(4), unread_count: 2,
   },
   {
-    id: 'c2', channel: 'instagram', prospect_name: 'estelle_design',
+    id: 'c2', prospect_id: 'r8', channel: 'instagram', prospect_name: 'estelle_design',
     last_message_preview: 'INFO', last_message_at: ago(55), last_inbound_at: ago(55), unread_count: 1,
   },
   {
-    id: 'c3', channel: 'facebook', prospect_name: 'Paul Mbarga',
+    id: 'c3', prospect_id: 'r6', channel: 'facebook', prospect_name: 'Paul Mbarga',
     last_message_preview: 'Merci, je regarde avec ma femme.', last_message_at: ago(60 * 30),
     last_inbound_at: ago(60 * 30), unread_count: 0,
   },
@@ -89,3 +99,31 @@ export const demoEntryLinks: EntryLink[] = [
 export const demoTriggers: KeywordTrigger[] = [
   { id: 't1', product_id: 'p2', channel_account_id: 'a3', keywords: ['info', 'prix', 'combien'], reply_text: 'Merci pour votre message ! Voici le catalogue et les prix 👗 Quelle occasion préparez-vous ?', active: true, matches: 27 },
 ]
+
+export const demoBrandVoice: BrandVoice = {
+  sender_name: 'Awa', signature: 'Awa – Wax & Co', formality: 'vous', emojis: true,
+  banned_phrases: ['N\'hésitez pas à revenir vers moi'],
+}
+
+const profile = (p: Partial<RelationalProfile>): RelationalProfile => ({
+  language: 'fr', formality: 'vous', tone: null, style: {}, interests: [], pain_points: [], objections: [],
+  preferences: [], buying_signals: [], summary: null, version: 1, updated_at: ago(5), ...p,
+})
+
+export const demoProfiles: Record<string, RelationalProfile> = {
+  r7: profile({
+    formality: 'tu', tone: 'chaleureux, direct, rassurant',
+    style: { length: 'court', emojis: true, register: 'familier' },
+    interests: ['robe bleue', 'taille 42', 'livraison à Bonamoussadi'],
+    objections: ['délai (mariage le 12)'],
+    buying_signals: ['date précise : mariage le 12', 'demande le prix', 'demande la livraison'],
+    summary: 'Mireille veut la robe bleue en 42 pour un mariage le 12, livrée à Bonamoussadi. Très réactive, écrit court avec émojis. Sensible au délai.',
+    version: 3,
+  }),
+  r6: profile({
+    tone: 'posé, informatif', style: { length: 'moyen', emojis: false, register: 'cordial' },
+    interests: ['ensembles assortis pour couple'], preferences: ['décide avec sa femme'],
+    summary: 'Paul cherche des ensembles assortis homme/femme. Il décide avec sa femme : lui laisser le temps, proposer des photos.',
+    version: 1,
+  }),
+}

@@ -3,13 +3,16 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
+  AiDraft, BrandVoice, DraftKind, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
 } from './types'
 import type { ChannelId } from '../data/channels'
 import {
-  demoAccounts, demoConversations, demoEntryLinks, demoMessages, demoProducts, demoProspects, demoTriggers,
+  demoAccounts, demoBrandVoice, demoConversations, demoEntryLinks, demoMessages, demoProducts, demoProfiles,
+  demoProspects, demoTriggers,
 } from '../data/demo'
+import { demoDraft } from './demoWriter'
 
 // Couche de données unique : Supabase si configuré, sinon données de démo en mémoire.
 export const isDemo = !supabase
@@ -23,6 +26,8 @@ const demo = {
   entryLinks: [...demoEntryLinks],
   triggers: [...demoTriggers],
   outreachProfile: 'new' as OutreachProfile,
+  profiles: { ...demoProfiles },
+  brandVoice: { ...demoBrandVoice },
 }
 
 function unwrap<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
@@ -107,6 +112,7 @@ export async function connectMeta(code: string) {
 
 interface ConversationRow {
   id: string
+  prospect_id: string
   last_message_preview: string | null
   last_message_at: string | null
   last_inbound_at: string | null
@@ -122,12 +128,13 @@ export async function listConversations(): Promise<Conversation[]> {
   const rows = unwrap(
     await supabase
       .from('conversations')
-      .select('id, last_message_preview, last_message_at, last_inbound_at, unread_count, channel_accounts(channel), prospects(full_name)')
+      .select('id, prospect_id, last_message_preview, last_message_at, last_inbound_at, unread_count, channel_accounts(channel), prospects(full_name)')
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .returns<ConversationRow[]>(),
   )
   return rows.map((r) => ({
     id: r.id,
+    prospect_id: r.prospect_id,
     channel: r.channel_accounts?.channel ?? 'whatsapp',
     prospect_name: r.prospects?.full_name ?? 'Contact',
     last_message_preview: r.last_message_preview,
@@ -338,4 +345,74 @@ export async function toggleTrigger(id: string, active: boolean) {
     return
   }
   unwrap(await supabase.from('keyword_triggers').update({ active }).eq('id', id))
+}
+
+// ---------- Cerveau IA (Partie 3) ----------
+
+export async function getBrandVoice(): Promise<BrandVoice> {
+  if (!supabase) return demo.brandVoice
+  const { data } = await supabase.from('organizations').select('brand_voice').limit(1).single()
+  return (data?.brand_voice ?? {}) as BrandVoice
+}
+
+export async function saveBrandVoice(voice: BrandVoice) {
+  if (!supabase) {
+    demo.brandVoice = voice
+    return
+  }
+  unwrap(await supabase.from('organizations').update({ brand_voice: voice }).eq('id', await orgId()))
+}
+
+export async function saveProductKnowledge(productId: string, knowledge: string) {
+  if (!supabase) {
+    demo.products = demo.products.map((p) => (p.id === productId ? { ...p, knowledge } : p))
+    return
+  }
+  unwrap(await supabase.from('products').update({ knowledge }).eq('id', productId))
+}
+
+export async function getProfile(prospectId: string): Promise<RelationalProfile | null> {
+  if (!supabase) return demo.profiles[prospectId] ?? null
+  const { data } = await supabase.from('prospect_profiles').select('*').eq('prospect_id', prospectId).maybeSingle()
+  return (data as RelationalProfile | null) ?? null
+}
+
+export async function refreshProfile(conversationId: string): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.functions.invoke('update-profile', { body: { conversation_id: conversationId } })
+  if (error) throw error
+}
+
+// Brouillons de messages : IA (Edge Function draft-message) ou modèles de démonstration.
+export async function draftMessage(opts: {
+  kind: DraftKind
+  prospect: Prospect | { id: string; full_name: string | null; job_title?: string | null; company?: string | null; language?: string | null; product_id?: string | null; best_channel?: ChannelId | null }
+  conversation?: Conversation
+}): Promise<AiDraft> {
+  const { kind, prospect, conversation } = opts
+  if (supabase) {
+    const { data, error } = await supabase.functions.invoke('draft-message', {
+      body: { prospect_id: prospect.id, kind, conversation_id: conversation?.id },
+    })
+    if (error) throw error
+    return { ...(data as AiDraft), source: 'ai' }
+  }
+  const full = demo.prospects.find((p) => p.id === prospect.id)
+  const product = demo.products.find((p) => p.id === (full?.product_id ?? prospect.product_id))
+  return demoDraft({
+    kind,
+    channel: conversation?.channel ?? full?.best_channel ?? prospect.best_channel ?? 'linkedin',
+    product,
+    prospect: {
+      full_name: full?.full_name ?? prospect.full_name, job_title: full?.job_title ?? prospect.job_title ?? null,
+      company: full?.company ?? prospect.company ?? null, language: full?.language ?? prospect.language ?? null,
+    },
+    profile: demo.profiles[prospect.id] ?? null,
+    messages: conversation ? demo.messages.filter((m) => m.conversation_id === conversation.id) : [],
+  })
+}
+
+export async function markDraftUsed(draft: AiDraft, index: number) {
+  if (!supabase || draft.source !== 'ai') return
+  await supabase.from('ai_drafts').update({ chosen_index: index, used_at: new Date().toISOString() }).eq('id', draft.id)
 }

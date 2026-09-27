@@ -7,7 +7,7 @@ Plateforme SaaS de prospection IA. Chaque utilisateur décrit son produit : l'ag
 | `docs/` | Architecture (`00`) et une fiche par partie (`01` → `07`) |
 | `src/` | Plateforme web : React + Vite + TypeScript |
 | `supabase/migrations/` | Schéma Postgres multi-clients + RLS |
-| `supabase/functions/` | Edge Functions : analyse produit, qualification des prospects, connexion WhatsApp, connexion Facebook/Instagram |
+| `supabase/functions/` | Edge Functions : analyse produit, qualification, rédaction IA, profil relationnel, connexion WhatsApp et Facebook/Instagram |
 | `n8n/workflows/` | Workflows à importer dans n8n |
 | `infra/` | n8n + Caddy (HTTPS) pour un VPS |
 

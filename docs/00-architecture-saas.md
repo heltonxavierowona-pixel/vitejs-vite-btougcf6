@@ -123,8 +123,8 @@ Sans ces validations, seuls les comptes ajoutés comme **testeurs** de ton app p
 | # | Partie | Statut |
 |---|---|---|
 | 01 | Fondations SaaS : inscription, produits + conseiller de canaux, connexion des comptes, boîte de réception | ✅ Validée |
-| 02 | Ciblage & sourcing par produit : import qualifié + file du jour, mots-clés en commentaire, liens WhatsApp | **Livrée — en attente de validation** |
-| 03 | Cerveau IA (ton, langues, profil relationnel) | À venir |
+| 02 | Ciblage & sourcing par produit : import qualifié + file du jour, mots-clés en commentaire, liens WhatsApp | ✅ Validée |
+| 03 | Cerveau IA : rédaction personnalisée, ton adapté, multilingue, profil relationnel, suivi des coûts IA | **Livrée — en attente de validation** |
 | 04 | Détection d'intérêt & bascule WhatsApp | À venir |
 | 05 | Conversation IA autonome, validations, messages envoyés depuis le téléphone (coexistence) | À venir |
 | 06 | Closing & relances (modèles WhatsApp) | À venir |

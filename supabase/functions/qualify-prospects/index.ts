@@ -2,8 +2,9 @@
 // L'utilisateur colle des profils qu'il consulte lui-même ; l'IA extrait les
 // informations utiles, choisit le segment et note l'adéquation avec le produit.
 import { handler, HttpError, json, requireUser, rest } from '../_shared/supabase.ts'
+import { chatJSON, MODELS } from '../_shared/llm.ts'
 
-const MODEL = Deno.env.get('OPENROUTER_QUALIFY_MODEL') ?? Deno.env.get('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-4.5'
+const MODEL = MODELS.fast
 const MAX_ITEMS = 20
 
 const SYSTEM_PROMPT = `Tu qualifies des prospects pour le produit d'un utilisateur de « Le Closer ».
@@ -56,35 +57,19 @@ Deno.serve(handler(async (req) => {
   const fresh = items.filter((i) => !i.profile_url || !known.has(i.profile_url.trim()))
   if (!fresh.length) return json({ inserted: [], skipped: items.length })
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${Deno.env.get('OPENROUTER_API_KEY')}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.1,
-      max_tokens: 400 + 250 * fresh.length,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            produit: { nom: product.name, description: product.description, cible: product.target },
-            segments: product.analysis?.segments ?? [],
-            profils: fresh.map((i, n) => ({ n, texte: i.text.slice(0, 3000) })),
-          }),
-        },
-      ],
+  const parsed = (await chatJSON({
+    model: MODEL,
+    system: SYSTEM_PROMPT,
+    user: JSON.stringify({
+      produit: { nom: product.name, description: product.description, cible: product.target },
+      segments: product.analysis?.segments ?? [],
+      profils: fresh.map((i, n) => ({ n, texte: i.text.slice(0, 3000) })),
     }),
-  })
-  if (!res.ok) throw new HttpError(502, `OpenRouter: ${await res.text()}`)
-  const raw: string = (await res.json()).choices?.[0]?.message?.content ?? ''
-  let parsed: { prospects?: Record<string, unknown>[] }
-  try {
-    parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
-  } catch {
-    throw new HttpError(502, 'Réponse IA illisible, réessayez')
-  }
+    maxTokens: 400 + 250 * fresh.length,
+    temperature: 0.1,
+    orgId,
+    feature: 'qualify',
+  })) as { prospects?: Record<string, unknown>[] }
   const out = parsed.prospects ?? []
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 200) : null)
 

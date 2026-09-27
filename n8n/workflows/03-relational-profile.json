@@ -1,0 +1,116 @@
+{
+  "name": "03 · Profil relationnel (à chaque message reçu)",
+  "nodes": [
+    {
+      "id": "p1",
+      "name": "Webhook Supabase (nouveau message)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "closer-profile",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closer/profile",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "p2",
+      "name": "Filtrer messages reçus",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages reçus des prospects.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'inbound') return [];\nreturn [{ json: { conversation_id: r.conversation_id } }];\n"
+      }
+    },
+    {
+      "id": "p3",
+      "name": "Attendre 20 s (regrouper les rafales)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        200
+      ],
+      "webhookId": "closer-profile-wait",
+      "parameters": {
+        "amount": 20
+      }
+    },
+    {
+      "id": "p4",
+      "name": "Edge Function · update-profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/functions/v1/update-profile",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-closer-secret",
+              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ conversation_id: $json.conversation_id }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Supabase (nouveau message)": {
+      "main": [
+        [
+          {
+            "node": "Filtrer messages reçus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer messages reçus": {
+      "main": [
+        [
+          {
+            "node": "Attendre 20 s (regrouper les rafales)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendre 20 s (regrouper les rafales)": {
+      "main": [
+        [
+          {
+            "node": "Edge Function · update-profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}

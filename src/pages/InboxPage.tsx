@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
-import { listConversations, listMessages, markRead, sendMessage, subscribeInbox, windowOpen } from '../lib/api'
-import type { Conversation, Message } from '../lib/types'
+import DraftPanel from '../components/DraftPanel'
+import ProfilePanel from '../components/ProfilePanel'
+import {
+  draftMessage, getProfile, isDemo, listConversations, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
+  subscribeInbox, windowOpen,
+} from '../lib/api'
+import type { AiDraft, Conversation, Message, RelationalProfile } from '../lib/types'
 
 const time = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : ''
@@ -16,6 +21,9 @@ export default function InboxPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<AiDraft | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [profile, setProfile] = useState<RelationalProfile | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(
@@ -41,6 +49,11 @@ export default function InboxPage() {
     markRead(selected).then(refresh)
   }, [selected, refresh])
 
+  const prospectId = conversations.find((c) => c.id === selected)?.prospect_id
+  useEffect(() => {
+    if (prospectId) getProfile(prospectId).then(setProfile)
+  }, [prospectId, messages])
+
   // Nouveau message d'un client → la liste et le fil se mettent à jour.
   useEffect(
     () => subscribeInbox(() => {
@@ -55,6 +68,23 @@ export default function InboxPage() {
   const current = conversations.find((c) => c.id === selected)
   const open = current ? windowOpen(current) : false
 
+  async function suggest() {
+    if (!current) return
+    setSuggesting(true)
+    setError(null)
+    try {
+      setSuggestion(await draftMessage({
+        kind: 'reply',
+        prospect: { id: current.prospect_id, full_name: current.prospect_name },
+        conversation: current,
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault()
     if (!current || !draft.trim()) return
@@ -62,6 +92,7 @@ export default function InboxPage() {
     try {
       await sendMessage(current.id, draft.trim())
       setDraft('')
+      setSuggestion(null)
       await Promise.all([loadMessages(current.id), refresh()])
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -83,7 +114,11 @@ export default function InboxPage() {
             <button
               key={c.id}
               className={`inbox-item ${c.id === selected ? 'active' : ''}`}
-              onClick={() => setSelected(c.id)}
+              onClick={() => {
+                setSelected(c.id)
+                setSuggestion(null)
+                setDraft('')
+              }}
             >
               <div className="inbox-item-top">
                 <strong>{c.prospect_name}</strong>
@@ -124,6 +159,17 @@ export default function InboxPage() {
 
             <form className="composer" onSubmit={send}>
               {error && <p className="error">{error}</p>}
+              {suggestion && (
+                <DraftPanel
+                  draft={suggestion}
+                  useLabel="Utiliser"
+                  onUse={(text, i) => {
+                    setDraft(text)
+                    markDraftUsed(suggestion, i)
+                  }}
+                  onClose={() => setSuggestion(null)}
+                />
+              )}
               {!open && (
                 <p className="notice">
                   Le client n'a pas écrit depuis plus de 24 h : Meta n'autorise qu'un modèle de message approuvé
@@ -141,12 +187,27 @@ export default function InboxPage() {
                   }}
                   placeholder={open ? 'Votre réponse… (Entrée pour envoyer)' : 'Réponse libre indisponible'}
                 />
-                <button className="btn" disabled={!open || !draft.trim()}>Envoyer</button>
+                <div className="composer-actions">
+                  <button type="button" className="btn btn-ghost" disabled={!open || suggesting} onClick={suggest}>
+                    {suggesting ? 'Rédaction…' : '✨ Suggérer'}
+                  </button>
+                  <button className="btn" disabled={!open || !draft.trim()}>Envoyer</button>
+                </div>
               </div>
             </form>
           </section>
         ) : (
           <section className="thread empty-thread muted">Sélectionnez une conversation</section>
+        )}
+
+        {current && (
+          <ProfilePanel
+            profile={profile}
+            onRefresh={isDemo ? undefined : async () => {
+              await refreshProfile(current.id)
+              setProfile(await getProfile(current.prospect_id))
+            }}
+          />
         )}
       </div>
     </>

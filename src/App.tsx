@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 import OverviewPage from './pages/OverviewPage'
 import ProductsPage from './pages/ProductsPage'
 import ProspectsPage from './pages/ProspectsPage'
+import SettingsPage from './pages/SettingsPage'
 import UpcomingPage from './pages/UpcomingPage'
 import './App.css'
 
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/conversations', label: 'Conversations' },
   { to: '/validations', label: 'Validations' },
   { to: '/rapports', label: 'Rapports' },
+  { to: '/parametres', label: 'Paramètres' },
 ]
 
 function useSession() {
@@ -70,6 +72,7 @@ export default function App() {
           <Route path="/canaux" element={<ChannelsPage />} />
           <Route path="/conversations" element={<InboxPage />} />
           <Route path="/prospects" element={<ProspectsPage />} />
+          <Route path="/parametres" element={<SettingsPage />} />
           <Route
             path="/validations"
             element={

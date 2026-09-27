@@ -8,7 +8,7 @@ export const GRAPH = `https://graph.facebook.com/${Deno.env.get('META_GRAPH_VERS
 
 export const cors = {
   'Access-Control-Allow-Origin': Deno.env.get('APP_ORIGIN') ?? '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-closer-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -92,4 +92,10 @@ export function handler(fn: (req: Request) => Promise<Response>) {
       return json({ error: e instanceof Error ? e.message : String(e) }, status)
     }
   }
+}
+
+// Appel serveur à serveur (n8n) : secret partagé dans l'en-tête x-closer-secret.
+export function isServiceCall(req: Request): boolean {
+  const secret = Deno.env.get('CLOSER_WEBHOOK_SECRET')
+  return !!secret && req.headers.get('x-closer-secret') === secret
 }

@@ -64,15 +64,18 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
 2. Auth → activer l'e-mail (lien magique) et définir l'URL du site.
 3. Déployer les fonctions :
    ```bash
-   supabase functions deploy analyze-product qualify-prospects whatsapp-connect meta-connect
+   supabase functions deploy analyze-product qualify-prospects draft-message whatsapp-connect meta-connect
+   supabase functions deploy update-profile --no-verify-jwt   # appelée par n8n, protégée par CLOSER_WEBHOOK_SECRET
    supabase secrets set --env-file supabase/functions/.env
    ```
-4. **Database Webhook** (Database → Webhooks) : table `messages`, événement `INSERT`, URL `https://n8n.tondomaine.com/webhook/closer/outbound`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>`.
+4. **Database Webhooks** (Database → Webhooks), table `messages`, événement `INSERT`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>` :
+   - `https://n8n.tondomaine.com/webhook/closer/outbound` (workflow 02, envoi) ;
+   - `https://n8n.tondomaine.com/webhook/closer/profile` (workflow 03, profil relationnel).
 
 ### C. n8n (VPS ≈ 5 €/mois)
 1. `infra/docker-compose.yml` + `infra/.env` (voir `infra/.env.example`).
 2. Importer `n8n/workflows/*.json`, sélectionner les credentials (Supabase service_role, OpenRouter, Telegram).
-3. Activer les 3 workflows.
+3. Activer les workflows (00 à 03).
 
 ### D. Plateforme web
 Déployer ce dépôt (Vercel / Cloudflare Pages) avec les variables de `.env.example` (clés **publiques** uniquement).

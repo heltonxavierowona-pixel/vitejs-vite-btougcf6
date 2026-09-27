@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
+import DraftPanel from '../components/DraftPanel'
 import { channelInfo } from '../data/channels'
 import {
-  createEntryLink, createTrigger, importProspects, listAccounts, listEntryLinks, listProducts, listProspects,
+  createEntryLink, createTrigger, draftMessage, importProspects, markDraftUsed, listAccounts, listEntryLinks, listProducts, listProspects,
   listTriggers, markContacted, outreachQueue, setOutreachProfile, getOutreachProfile, toggleTrigger,
 } from '../lib/api'
 import { PROFILE_LABEL, STAGE_LABEL } from '../lib/outreach'
 import type {
-  ChannelAccount, EntryLink, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
+  AiDraft, ChannelAccount, DraftKind, EntryLink, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
 } from '../lib/types'
 
 type Tab = 'queue' | 'import' | 'pipeline' | 'sources'
@@ -47,6 +48,22 @@ function QueueTab({ product }: { product: Product }) {
   const [channel, setChannel] = useState<OutboundChannel>(outbound[0] ?? 'linkedin')
   const [profile, setProfile] = useState<OutreachProfile>('new')
   const [data, setData] = useState<{ queue: Prospect[]; limit: number; doneToday: number } | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, AiDraft>>({})
+  const [writing, setWriting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function write(p: Prospect, kind: DraftKind) {
+    setWriting(`${p.id}-${kind}`)
+    setError(null)
+    try {
+      const d = await draftMessage({ kind, prospect: p })
+      setDrafts((all) => ({ ...all, [p.id]: d }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setWriting(null)
+    }
+  }
 
   const load = useCallback(() => {
     getOutreachProfile().then(setProfile)
@@ -109,6 +126,7 @@ function QueueTab({ product }: { product: Product }) {
         </p>
       )}
 
+      {error && <p className="error">{error}</p>}
       <div className="prospect-list">
         {data?.queue.map((p) => (
           <article key={p.id} className="card prospect">
@@ -121,6 +139,32 @@ function QueueTab({ product }: { product: Product }) {
             </div>
             {p.segment_label && <span className="tag">{p.segment_label}</span>}
             {p.fit_reasons.length > 0 && <ul className="reasons">{p.fit_reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+            {drafts[p.id] ? (
+              <DraftPanel
+                draft={drafts[p.id]}
+                useLabel="Copier"
+                onUse={(text, i) => {
+                  navigator.clipboard?.writeText(text).catch(() => {})
+                  markDraftUsed(drafts[p.id], i)
+                }}
+                onClose={() => setDrafts((all) => {
+                  const next = { ...all }
+                  delete next[p.id]
+                  return next
+                })}
+              />
+            ) : (
+              <div className="actions">
+                {(channel === 'linkedin'
+                  ? [['invitation', 'Note d\'invitation'], ['opening', 'Premier message']] as const
+                  : [['opening', 'Message privé']] as const
+                ).map(([kind, label]) => (
+                  <button key={kind} className="btn btn-ghost" disabled={!!writing} onClick={() => write(p, kind)}>
+                    {writing === `${p.id}-${kind}` ? 'Rédaction…' : `✨ ${label}`}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="actions">
               {p.profile_url && (
                 <a className="btn btn-ghost" href={p.profile_url} target="_blank" rel="noreferrer">Ouvrir le profil</a>

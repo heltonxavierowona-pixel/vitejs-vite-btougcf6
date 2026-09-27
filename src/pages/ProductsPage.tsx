@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
 import { channelInfo } from '../data/channels'
-import { analyzeProduct, createProduct, listProducts } from '../lib/api'
+import { analyzeProduct, createProduct, listProducts, saveProductKnowledge } from '../lib/api'
 import type { Audience, OfferType, PriceLevel, Product, ProductAnalysis, ProductInput } from '../lib/types'
 
 const ROLE_LABEL = { outbound: 'Aller chercher', inbound: 'Attirer', closing: 'Conclure' } as const
@@ -153,6 +153,42 @@ function Analysis({ a }: { a: ProductAnalysis }) {
   )
 }
 
+// Ce que l'IA a le droit d'affirmer sur le produit. Sans connaissances, elle pose des questions
+// au lieu d'inventer.
+function KnowledgeEditor({ product, onSaved }: { product: Product; onSaved: (knowledge: string) => void }) {
+  const [text, setText] = useState(product.knowledge ?? '')
+  const [saved, setSaved] = useState(false)
+  return (
+    <section className="card form">
+      <div className="card-head">
+        <h2>Connaissances produit</h2>
+        <span className="muted small">Seule source de vérité de l'IA</span>
+      </div>
+      <p className="muted small">
+        Arguments, questions fréquentes, délais, zones de livraison, conditions, liens, prix. L'IA n'affirme rien
+        qui ne soit écrit ici ; les prix et conditions déclenchent une validation avant envoi.
+      </p>
+      <textarea
+        rows={6}
+        value={text}
+        onChange={(e) => { setText(e.target.value); setSaved(false) }}
+        placeholder={'Délai de confection : 7 jours.\nLivraison Douala et Yaoundé : 2 000 FCFA.\nPaiement Mobile Money à la commande.'}
+      />
+      {saved && <p className="success">Enregistré.</p>}
+      <button
+        className="btn btn-ghost"
+        onClick={async () => {
+          await saveProductKnowledge(product.id, text)
+          onSaved(text)
+          setSaved(true)
+        }}
+      >
+        Enregistrer les connaissances
+      </button>
+    </section>
+  )
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -225,6 +261,13 @@ export default function ProductsPage() {
               </button>
             </section>
           ) : null}
+          {current && !creating && (
+            <KnowledgeEditor
+              key={current.id}
+              product={current}
+              onSaved={(knowledge) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, knowledge } : p)))}
+            />
+          )}
         </div>
       </div>
     </>
