@@ -57,6 +57,25 @@ function AutomationForm() {
         />
         <small className="muted">En dessous, le prospect passe dans « À vérifier » et c'est vous qui tranchez.</small>
       </label>
+      <label className="check">
+        <input type="checkbox" checked={a.followups_enabled} onChange={(e) => update({ followups_enabled: e.target.checked })} />
+        <span>
+          Relancer les prospects intéressés restés silencieux
+          <small className="muted">2 relances maximum, entre 8 h et 19 h, puis abandon. Toute réponse du prospect arrête les relances.</small>
+        </span>
+      </label>
+      <div className="form-row two">
+        <label>
+          1re relance après (jours)
+          <input type="number" min={1} max={14} value={a.followup_delays[0]}
+            onChange={(e) => update({ followup_delays: [Math.max(1, Number(e.target.value) || 1), a.followup_delays[1]] })} />
+        </label>
+        <label>
+          2e relance, puis abandon, après (jours)
+          <input type="number" min={1} max={30} value={a.followup_delays[1]}
+            onChange={(e) => update({ followup_delays: [a.followup_delays[0], Math.max(1, Number(e.target.value) || 1)] })} />
+        </label>
+      </div>
       {saved && <p className="success">Enregistré.</p>}
       <button className="btn">Enregistrer</button>
     </form>

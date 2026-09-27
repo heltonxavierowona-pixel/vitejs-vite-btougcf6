@@ -3,22 +3,23 @@ import ChannelBadge from '../components/ChannelBadge'
 import DraftPanel from '../components/DraftPanel'
 import { channelInfo } from '../data/channels'
 import {
-  analyzeAssistedReply, createEntryLink, createTrigger, draftMessage, importProspects, logAssistedMessage,
+  advanceDemoTime, analyzeAssistedReply, createEntryLink, isDemo, listTemplates, manageTemplates, markFollowedUp, createTrigger, draftMessage, importProspects, logAssistedMessage,
   markDraftUsed, resolveReview, listAccounts, listEntryLinks, listProducts, listProspects,
   listTriggers, markContacted, outreachQueue, setOutreachProfile, getOutreachProfile, toggleTrigger,
 } from '../lib/api'
 import { PROFILE_LABEL, STAGE_LABEL } from '../lib/outreach'
 import { actionMessage, ARCHIVE_LABEL, INTENT_LABEL } from '../lib/intentLabels'
 import type {
-  AiDraft, ChannelAccount, DraftKind, EntryLink, Intent, IntentOutcome, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
+  AiDraft, ChannelAccount, DraftKind, EntryLink, Intent, IntentOutcome, WhatsAppTemplate, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
 } from '../lib/types'
 
-type Tab = 'queue' | 'replies' | 'import' | 'pipeline' | 'sources'
+type Tab = 'queue' | 'replies' | 'followups' | 'import' | 'pipeline' | 'sources'
 type OutboundChannel = 'linkedin' | 'x'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'queue', label: 'À contacter aujourd\'hui' },
   { id: 'replies', label: 'Réponses' },
+  { id: 'followups', label: 'Relances' },
   { id: 'import', label: 'Importer' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'sources', label: 'Sources entrantes' },
@@ -308,6 +309,164 @@ function RepliesTab({ prospects, onChange }: { prospects: Prospect[]; onChange: 
             </article>
           ))}
         </div>
+      </section>
+    </>
+  )
+}
+
+// ---------- Relances ----------
+
+const TEMPLATE_STATUS: Record<string, { label: string; cls: string }> = {
+  APPROVED: { label: 'Approuvé', cls: 'intent-interested' },
+  PENDING: { label: 'En cours de validation par Meta', cls: 'intent-not_now' },
+  REJECTED: { label: 'Refusé', cls: 'intent-negative' },
+  PAUSED: { label: 'En pause (qualité)', cls: 'intent-negative' },
+  draft: { label: 'Brouillon', cls: '' },
+}
+
+const dateLabel = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+
+function FollowupTask({ prospect, onDone }: { prospect: Prospect; onDone: () => void }) {
+  const [draft, setDraft] = useState<AiDraft | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const n = Math.max(1, prospect.followups_sent ?? 1)
+  return (
+    <article className="card prospect">
+      <div className="prospect-head">
+        <div>
+          <strong>{prospect.full_name ?? 'Sans nom'}</strong>
+          <p className="muted">{[prospect.job_title, prospect.company].filter(Boolean).join(' · ')}</p>
+        </div>
+        <span className="tag">Relance {n}/2</span>
+      </div>
+      {prospect.best_channel && <ChannelBadge id={prospect.best_channel} />}
+      {draft ? (
+        <DraftPanel
+          draft={draft}
+          useLabel="Copier"
+          onUse={(text, i) => {
+            navigator.clipboard?.writeText(text).catch(() => {})
+            markDraftUsed(draft, i)
+            setCopied(text)
+          }}
+          onClose={() => setDraft(null)}
+        />
+      ) : (
+        <button className="btn btn-ghost" disabled={busy} onClick={async () => {
+          setBusy(true)
+          try { setDraft(await draftMessage({ kind: 'followup', prospect })) } finally { setBusy(false) }
+        }}>
+          {busy ? 'Rédaction…' : '✨ Rédiger la relance'}
+        </button>
+      )}
+      <button className="btn" onClick={async () => { await markFollowedUp(prospect, copied ?? undefined); onDone() }}>
+        Marquer comme relancé
+      </button>
+    </article>
+  )
+}
+
+function FollowupsTab({ prospects, onChange }: { prospects: Prospect[]; onChange: () => void }) {
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  useEffect(() => {
+    listTemplates().then(setTemplates)
+  }, [])
+
+  const tasks = prospects.filter((p) => p.followup_due)
+  const scheduled = prospects
+    .filter((p) => p.next_followup_at && ['interested', 'whatsapp', 'hot'].includes(p.stage))
+    .sort((a, b) => a.next_followup_at!.localeCompare(b.next_followup_at!))
+
+  async function templatesAction(action: 'create_defaults' | 'sync') {
+    setBusy(true)
+    setMessage(null)
+    try {
+      setTemplates(await manageTemplates(action))
+      setMessage({ kind: 'ok', text: action === 'sync' ? 'Statuts mis à jour.' : 'Modèles envoyés à Meta pour validation (quelques minutes à 24 h).' })
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <p className="muted small">
+        Uniquement les prospects intéressés restés silencieux : 2 relances espacées, puis abandon. Toute réponse
+        arrête les relances. Envois entre 8 h et 19 h.
+      </p>
+      {isDemo && (
+        <div className="toolbar">
+          <button className="btn btn-ghost" onClick={() => {
+            const r = advanceDemoTime(3)
+            setMessage({ kind: 'ok', text: `Démo, +3 jours : ${r.sent} relance(s) WhatsApp envoyée(s), ${r.tasks} tâche(s), ${r.abandoned} abandon(s).` })
+            onChange()
+          }}>
+            Démo : avancer de 3 jours
+          </button>
+        </div>
+      )}
+      {message && <p className={message.kind === 'ok' ? 'success' : 'error'}>{message.text}</p>}
+
+      <section className="card">
+        <h2>À relancer vous-même <span className="muted small">{tasks.length}</span></h2>
+        <p className="muted small">
+          LinkedIn et X (pas d'API), Messenger et Instagram (relance automatique interdite par Meta après 24 h),
+          conversation en pause, ou modèle WhatsApp pas encore approuvé.
+        </p>
+        {tasks.length === 0 && <p className="muted">Aucune relance à faire.</p>}
+        <div className="prospect-list">
+          {tasks.map((p) => <FollowupTask key={p.id} prospect={p} onDone={onChange} />)}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Relances prévues <span className="muted small">{scheduled.length}</span></h2>
+        {scheduled.length === 0 ? <p className="muted">Aucune relance prévue.</p> : (
+          <ul className="schedule">
+            {scheduled.map((p) => (
+              <li key={p.id}>
+                <strong>{p.full_name ?? 'Sans nom'}</strong>
+                <span className="muted small">
+                  {(p.followups_sent ?? 0) >= 2 ? 'abandon' : `relance ${(p.followups_sent ?? 0) + 1}/2`} le {dateLabel(p.next_followup_at)}
+                </span>
+                <span className="tag">{STAGE_LABEL[p.stage]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h2><ChannelBadge id="whatsapp" /> Modèles de relance</h2>
+          <div className="actions">
+            <button className="btn btn-ghost" disabled={busy} onClick={() => templatesAction('sync')}>Actualiser</button>
+            <button className="btn" disabled={busy} onClick={() => templatesAction('create_defaults')}>Créer les modèles</button>
+          </div>
+        </div>
+        <p className="muted small">
+          Hors fenêtre de 24 h, WhatsApp n'autorise que des modèles approuvés par Meta (catégorie marketing, facturés
+          au message). {'{{1}}'} = prénom, {'{{2}}'} = produit.
+        </p>
+        {templates.length === 0 && <p className="muted">Aucun modèle : les relances WhatsApp deviendront des tâches.</p>}
+        <ul className="link-list">
+          {templates.map((t) => (
+            <li key={t.id}>
+              <div className="trigger-head">
+                <strong>{t.purpose === 'followup_1' ? 'Relance 1' : 'Relance 2'} · {t.language.toUpperCase()}</strong>
+                <span className={`intent ${TEMPLATE_STATUS[t.status]?.cls ?? ''}`}>{TEMPLATE_STATUS[t.status]?.label ?? t.status}</span>
+              </div>
+              <p className="small">{t.body}</p>
+              {t.rejected_reason && <p className="error small">{t.rejected_reason}</p>}
+            </li>
+          ))}
+        </ul>
       </section>
     </>
   )
@@ -612,6 +771,7 @@ export default function ProspectsPage() {
 
           {product && tab === 'queue' && <QueueTab key={`${product.id}-${version}`} product={product} />}
           {tab === 'replies' && <RepliesTab prospects={prospects} onChange={() => setVersion((v) => v + 1)} />}
+          {tab === 'followups' && <FollowupsTab prospects={prospects} onChange={() => setVersion((v) => v + 1)} />}
           {product && tab === 'import' && (
             <ImportTab product={product} onImported={() => setVersion((v) => v + 1)} />
           )}

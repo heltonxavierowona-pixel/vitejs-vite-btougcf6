@@ -2,7 +2,7 @@
 // testables avec Node. Voir docs/03-cerveau-ia.md.
 
 export type Channel = 'linkedin' | 'x' | 'facebook' | 'instagram' | 'whatsapp'
-export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff'
+export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff' | 'followup'
 
 export interface AiContext {
   brand_voice: {
@@ -34,6 +34,16 @@ export interface AiContext {
   }
   profile: Record<string, unknown> | null
   conversation: { channel: Channel; messages: { from: 'prospect' | 'nous'; text: string; at: string }[] } | null
+  closing?: {
+    step: string | null
+    next_action: 'send_presentation' | 'propose_call' | null
+    presentation_label?: string | null
+    has_presentation?: boolean
+    has_booking?: boolean
+    call_minutes?: number | null
+    presentation_url?: string | null
+    booking_url?: string | null
+  } | null
 }
 
 // ---------- Contraintes par canal ----------
@@ -71,7 +81,9 @@ export const CHANNEL_FORMAT: Record<Channel, Partial<Record<DraftKind, { max: nu
 }
 
 export function draftFormat(channel: Channel, kind: DraftKind) {
-  const base = CHANNEL_FORMAT[channel][kind === 'handoff' ? 'reply' : kind]
+  const mapped: DraftKind = kind === 'handoff' ? 'reply'
+    : kind === 'followup' ? ((channel === 'linkedin' || channel === 'x') ? 'opening' : 'reply') : kind
+  const base = CHANNEL_FORMAT[channel][mapped]
     ?? CHANNEL_FORMAT[channel].reply ?? { max: 500, rules: '' }
   // Le lien WhatsApp (≈ 90 caractères) s'ajoute au texte : on laisse la place.
   return kind === 'handoff' ? { max: base.max + 120, rules: base.rules } : base
@@ -82,7 +94,7 @@ export const HANDOFF_PLACEHOLDER = '{{LIEN_WHATSAPP}}'
 
 // ---------- Rédaction ----------
 
-export function buildDraftSystem(ctx: AiContext, channel: Channel, kind: DraftKind): string {
+export function buildDraftSystem(ctx: AiContext, channel: Channel, kind: DraftKind, followupNumber = 1): string {
   const v = ctx.brand_voice ?? {}
   const f = draftFormat(channel, kind)
   const variants = kind === 'reply' || kind === 'handoff' ? 2 : 3
@@ -95,9 +107,17 @@ Le prospect vient d'exprimer un intérêt clair. Ton message :
 3. contient EXACTEMENT le texte ${HANDOFF_PLACEHOLDER} là où doit apparaître le lien (n'écris aucune URL) ;
 4. précise que c'est à lui d'écrire en premier via ce lien, sans pression (« quand vous voulez »).
 `
-    : ''
+    : kind === 'followup'
+      ? `
+RELANCE n°${followupNumber} sur 2
+Le prospect a montré de l'intérêt puis n'a plus répondu. Ton message :
+- rappelle en une phrase le dernier sujet échangé (sans reproche, sans « je n'ai pas eu de réponse ») ;
+- apporte UNE chose utile et nouvelle (un bénéfice, une réponse à son besoin, une question simple) ;
+${followupNumber >= 2 ? '- c\'est la dernière relance : laisse une porte de sortie élégante (« si ce n\'est plus d\'actualité, pas de souci »).' : '- termine par une question fermée facile (oui/non).'}
+`
+      : ''
   return `Tu écris au nom de ${v.sender_name ?? 'l\'utilisateur'}, qui vend « ${ctx.product?.name ?? 'son offre'} ».
-Tu rédiges ${kind === 'reply' || kind === 'handoff' ? 'une réponse' : 'un premier message'} de prospection, comme un humain attentionné, jamais comme une publicité.
+Tu rédiges ${kind === 'reply' || kind === 'handoff' ? 'une réponse' : kind === 'followup' ? 'une relance' : 'un premier message'} de prospection, comme un humain attentionné, jamais comme une publicité.
 
 FORMAT DU CANAL
 ${f.rules}
@@ -346,6 +366,32 @@ export function detectSensitive(text: string): string[] {
 // Messages non textuels : l'IA ne les comprend pas, l'humain reprend.
 export const MEDIA_PLACEHOLDER = /^\[(audio|voice|image|video|document|sticker|location|contacts|pièce jointe|message non textuel)[^\]]*\]$/i
 
+export const PRESENTATION_PLACEHOLDER = '{{LIEN_PRESENTATION}}'
+export const BOOKING_PLACEHOLDER = '{{LIEN_RDV}}'
+
+// Étape de closing imposée par la plateforme (closing_next_action en SQL).
+function closingInstructions(ctx: AiContext): string {
+  const c = ctx.closing
+  const v = ctx.brand_voice ?? {}
+  if (!c?.next_action) return ''
+  if (c.next_action === 'send_presentation') {
+    return `
+ÉTAPE DE CLOSING : ENVOYER LA PRÉSENTATION
+Le prospect est prêt. Réponds d'abord à son message, puis propose-lui « ${c.presentation_label || 'la présentation'} »
+en écrivant EXACTEMENT ${PRESENTATION_PLACEHOLDER} à l'endroit du lien (n'écris aucune URL).
+Ne demande PAS encore d'appel : ce sera l'étape suivante, après qu'il l'aura regardée.
+Mets "closing_action" à "presentation".`
+  }
+  return `
+ÉTAPE DE CLOSING : PROPOSER UN APPEL
+Il a reçu la présentation et a répondu. Réponds à son message puis propose un appel${c.call_minutes ? ` de ${c.call_minutes} minutes` : ''} avec ${v.sender_name ?? 'l\'utilisateur'}.
+${c.has_booking
+    ? `Invite-le à choisir son créneau en écrivant EXACTEMENT ${BOOKING_PLACEHOLDER} à l'endroit du lien (n'écris aucune URL).`
+    : 'Propose-lui de donner deux créneaux qui l\'arrangent cette semaine.'}
+Si sa réponse montre un blocage (objection, question), traite-le d'abord et ne propose l'appel que s'il reste pertinent.
+Mets "closing_action" à "call" seulement si tu proposes effectivement l'appel.`
+}
+
 export function buildAutopilotSystem(ctx: AiContext): string {
   const v = ctx.brand_voice ?? {}
   const base = buildDraftSystem(ctx, 'whatsapp', 'reply')
@@ -360,12 +406,14 @@ Passe la main à ${v.sender_name ?? 'l\'utilisateur'} (escalate = true) si :
 - la réponse exige une information absente des CONNAISSANCES PRODUIT ;
 - il s'agit d'un cas particulier (réclamation, litige, commande spéciale, urgence).
 Dans ce cas, écris quand même une courte réponse d'attente (« je vérifie avec ${v.sender_name ?? 'l\'équipe'} et je reviens vers vous »).
+${closingInstructions(ctx)}
 
 Réponds UNIQUEMENT en JSON :
-{"text": "", "language": "fr", "formality": "vous", "sensitive": {"is": false, "topics": []}, "escalate": {"is": false, "reason": ""}}`
+{"text": "", "language": "fr", "formality": "vous", "sensitive": {"is": false, "topics": []}, "escalate": {"is": false, "reason": ""}, "closing_action": null}`
 }
 
 export interface AutopilotReply {
+  closing_action: 'presentation' | 'call' | null
   text: string
   sensitive: boolean
   topics: string[]
@@ -389,10 +437,53 @@ export function normalizeAutopilot(raw: Record<string, unknown>, lastInbound: st
     ...detectSensitive(lastInbound),
   ])]
   return {
+    closing_action: raw.closing_action === 'presentation' || raw.closing_action === 'call' ? raw.closing_action : null,
     text,
     sensitive: s.is === true || topics.length > 0,
     topics,
     escalate: e.is === true || !text,
     reason: e.is === true ? String(e.reason ?? 'demande de l\'IA') : !text ? 'réponse vide' : null,
   }
+}
+
+// Insère les vrais liens et détermine l'étape de closing réellement franchie.
+export function applyClosingLinks(
+  text: string,
+  closing: AiContext['closing'],
+  action: AutopilotReply['closing_action'],
+): { text: string; step: 'presentation_sent' | 'call_proposed' | null } {
+  if (!closing?.next_action) {
+    return { text: text.split(PRESENTATION_PLACEHOLDER).join('').split(BOOKING_PLACEHOLDER).join('').trim(), step: null }
+  }
+  let out = text
+  let step: 'presentation_sent' | 'call_proposed' | null = null
+  if (closing.next_action === 'send_presentation' && closing.presentation_url) {
+    if (out.includes(PRESENTATION_PLACEHOLDER)) out = out.split(PRESENTATION_PLACEHOLDER).join(closing.presentation_url)
+    else if (action === 'presentation') out = `${out.trim()}\n${closing.presentation_url}`
+    if (out.includes(closing.presentation_url)) step = 'presentation_sent'
+  }
+  if (closing.next_action === 'propose_call') {
+    if (closing.booking_url) {
+      if (out.includes(BOOKING_PLACEHOLDER)) out = out.split(BOOKING_PLACEHOLDER).join(closing.booking_url)
+      else if (action === 'call') out = `${out.trim()}\n${closing.booking_url}`
+      if (out.includes(closing.booking_url)) step = 'call_proposed'
+    } else if (action === 'call') {
+      step = 'call_proposed'
+    }
+  }
+  out = out.split(PRESENTATION_PLACEHOLDER).join('').split(BOOKING_PLACEHOLDER).join('')
+  return { text: out.trim(), step }
+}
+
+// Modèles WhatsApp de relance proposés par défaut ({{1}} = prénom, {{2}} = produit).
+// Règles Meta : pas de variable en tout début ni en toute fin de texte.
+export const DEFAULT_FOLLOWUP_TEMPLATES: { purpose: 'followup_1' | 'followup_2'; language: 'fr' | 'en'; body: string }[] = [
+  { purpose: 'followup_1', language: 'fr', body: 'Bonjour {{1}}, je reviens vers vous au sujet de {{2}}. Avez-vous pu regarder ce que je vous ai envoyé ? Je reste disponible pour vos questions.' },
+  { purpose: 'followup_2', language: 'fr', body: 'Bonjour {{1}}, dernier petit message de ma part au sujet de {{2}}. Si ce n\'est plus d\'actualité, pas de souci. Sinon, répondez simplement ici et on reprend.' },
+  { purpose: 'followup_1', language: 'en', body: 'Hello {{1}}, just following up about {{2}}. Did you get a chance to look at what I sent? Happy to answer any questions.' },
+  { purpose: 'followup_2', language: 'en', body: 'Hello {{1}}, one last message from me about {{2}}. If it is no longer relevant, no problem at all. Otherwise, just reply here and we will pick it up.' },
+]
+
+export function templateName(purpose: string, language: string): string {
+  return `closer_${purpose.replace('followup_', 'relance_')}_${language}`
 }

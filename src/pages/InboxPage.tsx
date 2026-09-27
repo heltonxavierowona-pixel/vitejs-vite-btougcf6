@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import ChannelBadge from '../components/ChannelBadge'
+import ClosingBar from '../components/ClosingBar'
 import DraftPanel from '../components/DraftPanel'
 import ProfilePanel from '../components/ProfilePanel'
 import {
-  draftMessage, getProfile, isDemo, listConversations, listMergeCandidates, logAssistedMessage, mergeProspects,
+  draftMessage, getProduct, getProfile, getProspect, isDemo, recordClosingStep, listConversations, listMergeCandidates, logAssistedMessage, mergeProspects,
   setAiPaused, simulateClientMessage, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
   subscribeInbox, windowOpen,
 } from '../lib/api'
-import type { AiDraft, Conversation, Message, RelationalProfile } from '../lib/types'
+import type { AiDraft, ClosingStep, Conversation, Message, Product, Prospect, RelationalProfile } from '../lib/types'
 
 const time = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : ''
@@ -34,6 +35,9 @@ export default function InboxPage() {
   const [suggestion, setSuggestion] = useState<AiDraft | null>(null)
   const [suggesting, setSuggesting] = useState(false)
   const [profile, setProfile] = useState<RelationalProfile | null>(null)
+  const [prospect, setProspect] = useState<Prospect | null>(null)
+  const [product, setProduct] = useState<Product | null>(null)
+  const [pendingStep, setPendingStep] = useState<ClosingStep | null>(null)
   const [simText, setSimText] = useState('')
   const [simResult, setSimResult] = useState<string | null>(null)
   const [mergeList, setMergeList] = useState<{ id: string; full_name: string | null; source: string | null }[] | null>(null)
@@ -66,6 +70,14 @@ export default function InboxPage() {
   useEffect(() => {
     if (prospectId) getProfile(prospectId).then(setProfile)
   }, [prospectId, messages])
+
+  const loadProspect = useCallback((id: string) => getProspect(id).then(async (p) => {
+    setProspect(p)
+    setProduct(await getProduct(p?.product_id ?? null))
+  }), [])
+  useEffect(() => {
+    if (prospectId) loadProspect(prospectId)
+  }, [prospectId, messages, loadProspect])
 
   // Nouveau message d'un client → la liste et le fil se mettent à jour.
   useEffect(
@@ -111,6 +123,14 @@ export default function InboxPage() {
       } else {
         await sendMessage(current.id, draft.trim())
       }
+      // Étape de closing insérée par un bouton et toujours présente dans le message envoyé.
+      const c = product?.closing
+      if (pendingStep === 'presentation_sent' && c?.presentation_url && draft.includes(c.presentation_url)) {
+        await recordClosingStep(current.prospect_id, 'presentation_sent')
+      } else if (pendingStep === 'call_proposed' && (!c?.booking_url || draft.includes(c.booking_url))) {
+        await recordClosingStep(current.prospect_id, 'call_proposed')
+      }
+      setPendingStep(null)
       setDraft('')
       setSuggestion(null)
       await Promise.all([loadMessages(current.id), refresh()])
@@ -179,6 +199,17 @@ export default function InboxPage() {
               )}
             </header>
 
+            {prospect && (
+              <ClosingBar
+                prospect={prospect}
+                product={product}
+                onInsert={(text, step) => {
+                  setDraft((d) => (d.trim() ? `${d.trim()}\n${text}` : text))
+                  setPendingStep(step)
+                }}
+                onChange={() => loadProspect(current.prospect_id)}
+              />
+            )}
             {current.ai_paused && !assisted && (
               <p className={`pause-banner ${current.ai_paused_reason?.startsWith('escalation:') ? 'escalation' : ''}`}>
                 {pauseLabel(current.ai_paused_reason)}. Réactivez le pilote quand vous voulez.

@@ -64,7 +64,7 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
 2. Auth → activer l'e-mail (lien magique) et définir l'URL du site.
 3. Déployer les fonctions :
    ```bash
-   supabase functions deploy analyze-product qualify-prospects draft-message whatsapp-connect meta-connect
+   supabase functions deploy analyze-product qualify-prospects draft-message whatsapp-connect meta-connect whatsapp-templates
    supabase functions deploy update-profile classify-message autopilot-reply --no-verify-jwt   # appelées par n8n, protégées par CLOSER_WEBHOOK_SECRET
    supabase secrets set --env-file supabase/functions/.env
    ```
@@ -75,7 +75,7 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
 ### C. n8n (VPS ≈ 5 €/mois)
 1. `infra/docker-compose.yml` + `infra/.env` (voir `infra/.env.example`).
 2. Importer `n8n/workflows/*.json`, sélectionner les credentials (Supabase service_role, OpenRouter, Telegram).
-3. Activer les workflows (00 à 03).
+3. Activer les workflows (00 à 04).
 
 ### D. Plateforme web
 Déployer ce dépôt (Vercel / Cloudflare Pages) avec les variables de `.env.example` (clés **publiques** uniquement).

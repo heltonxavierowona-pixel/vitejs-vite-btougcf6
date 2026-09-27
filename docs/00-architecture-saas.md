@@ -126,6 +126,6 @@ Sans ces validations, seuls les comptes ajoutés comme **testeurs** de ton app p
 | 02 | Ciblage & sourcing par produit : import qualifié + file du jour, mots-clés en commentaire, liens WhatsApp | ✅ Validée |
 | 03 | Cerveau IA : rédaction personnalisée, ton adapté, multilingue, profil relationnel, suivi des coûts IA | ✅ Validée |
 | 04 | Détection d'intérêt (7 intentions, seuil de confiance) & bascule WhatsApp par lien avec code personnel | ✅ Validée |
-| 05 | Pilote automatique WhatsApp, validations (prix, contrat…), passage de relais, reprise en main, fusion des doublons | **Livrée — en attente de validation** |
-| 06 | Closing & relances (modèles WhatsApp) | À venir |
+| 05 | Pilote automatique WhatsApp, validations (prix, contrat…), passage de relais, reprise en main, fusion des doublons | ✅ Validée |
+| 06 | Closing (présentation puis appel) & relances (2 max, modèles WhatsApp, puis abandon) | **Livrée — en attente de validation** |
 | 07 | Tableau de bord & alertes | À venir |

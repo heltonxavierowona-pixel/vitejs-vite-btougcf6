@@ -34,7 +34,14 @@ export function demoDraft(opts: {
   const pname = product?.name ?? (english ? 'our solution' : 'notre solution')
 
   let variants: { text: string; angle: string }[]
-  if (kind === 'invitation') {
+  if (kind === 'followup') {
+    variants = english
+      ? [{ text: `Hi ${name}, following up on ${pname}: would a quick 2-minute summary for ${company} be useful?`, angle: 'valeur' }]
+      : [
+          { text: `Bonjour ${name}, je reviens vers vous au sujet de ${pname}. Un résumé en 2 minutes adapté à ${company} vous serait-il utile ?`, angle: 'valeur' },
+          { text: `Bonjour ${name}, petite question rapide : le sujet est-il toujours d'actualité pour ${company} ? Si ce n'est pas le bon moment, pas de souci.`, angle: 'porte de sortie' },
+        ]
+  } else if (kind === 'invitation') {
     variants = english
       ? [
           { text: `Hi ${name}, I follow HR topics in ${company}'s sector and would be glad to connect.`, angle: 'intérêt commun' },

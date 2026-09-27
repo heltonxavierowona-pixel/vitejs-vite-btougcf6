@@ -1,4 +1,4 @@
-// POST { prospect_id, kind: 'invitation' | 'opening' | 'reply', conversation_id? }
+// POST { prospect_id, kind: 'invitation' | 'opening' | 'reply' | 'followup', conversation_id? }
 // Rédige des variantes de message personnalisées pour un prospect, dans sa langue,
 // avec le ton adapté à son profil relationnel. Enregistrées dans ai_drafts.
 import { handler, HttpError, json, requireUser, rest } from '../_shared/supabase.ts'
@@ -14,8 +14,8 @@ Deno.serve(handler(async (req) => {
     kind: DraftKind
     conversation_id?: string
   }
-  if (!prospect_id || !['invitation', 'opening', 'reply'].includes(kind)) {
-    throw new HttpError(400, 'prospect_id et kind (invitation | opening | reply) requis')
+  if (!prospect_id || !['invitation', 'opening', 'reply', 'followup'].includes(kind)) {
+    throw new HttpError(400, 'prospect_id et kind (invitation | opening | reply | followup) requis')
   }
   if (kind === 'reply' && !conversation_id) throw new HttpError(400, 'conversation_id requis pour une réponse')
 
@@ -26,7 +26,14 @@ Deno.serve(handler(async (req) => {
   if (!ctx) throw new HttpError(404, 'Prospect introuvable')
 
   let channel: Channel
-  if (kind === 'reply') {
+  let followupNumber = 1
+  if (kind === 'followup') {
+    // Relance : sur le canal de la dernière conversation, numéro = relances déjà faites.
+    const [p] = await rest<{ followups_sent: number; best_channel: Channel | null }[]>(
+      `prospects?id=eq.${prospect_id}&select=followups_sent,best_channel`, { jwt })
+    followupNumber = Math.max(1, Math.min(2, p?.followups_sent ?? 1))
+    channel = ctx.conversation?.channel ?? p?.best_channel ?? 'linkedin'
+  } else if (kind === 'reply') {
     if (!ctx.conversation) throw new HttpError(404, 'Conversation introuvable')
     channel = ctx.conversation.channel
   } else {
@@ -42,7 +49,7 @@ Deno.serve(handler(async (req) => {
 
   const raw = await chatJSON({
     model: MODELS.write,
-    system: buildDraftSystem(ctx, channel, kind),
+    system: buildDraftSystem(ctx, channel, kind, followupNumber),
     user: buildDraftUser(ctx, kind),
     maxTokens: 1200,
     temperature: 0.7,

@@ -4,7 +4,9 @@
 //   sujet sensible → validation humaine ; passage de relais → pause de l'IA ; sinon → envoi.
 import { handler, HttpError, isServiceCall, json, rest } from '../_shared/supabase.ts'
 import { chatJSON, MODELS } from '../_shared/llm.ts'
-import { type AiContext, buildAutopilotSystem, buildDraftUser, MEDIA_PLACEHOLDER, normalizeAutopilot } from '../_shared/prompts.ts'
+import {
+  type AiContext, applyClosingLinks, buildAutopilotSystem, buildDraftUser, MEDIA_PLACEHOLDER, normalizeAutopilot,
+} from '../_shared/prompts.ts'
 
 interface ConversationRow {
   id: string
@@ -63,15 +65,25 @@ Deno.serve(handler(async (req) => {
     feature: 'autopilot',
   })
   const reply = normalizeAutopilot(raw, last.text)
+  // Liens de closing insérés par le code ; l'étape n'est enregistrée que si le lien est bien dans le message.
+  const closing = applyClosingLinks(reply.text, ctx.closing, reply.closing_action)
+  reply.text = closing.text
+  const recordStep = async (result: { action?: string }) => {
+    if (closing.step && (result.action === 'queued' || result.action === 'pending_approval')) {
+      await rest('rpc/record_closing_step', { method: 'POST', body: { p_prospect: conv.prospect_id, p_step: closing.step } })
+    }
+    return result
+  }
 
   // Passage de relais : la réponse d'attente passe quand même par la validation si elle est sensible.
   if (reply.escalate && reply.text) {
-    await queue(reply.text, reply.sensitive, reply.topics, false, null)
+    await recordStep(await queue(reply.text, reply.sensitive, reply.topics, false, null) as { action?: string })
     await rest('conversations?id=eq.' + conversation_id, {
       method: 'PATCH', prefer: 'return=minimal',
       body: { ai_paused: true, ai_paused_reason: `escalation:${reply.reason}`, ai_paused_at: new Date().toISOString() },
     })
     return json({ action: 'escalated', reason: reply.reason })
   }
-  return json(await queue(reply.text, reply.sensitive, reply.topics, reply.escalate, reply.reason))
+  const result = await queue(reply.text, reply.sensitive, reply.topics, reply.escalate, reply.reason) as { action?: string }
+  return json({ ...(await recordStep(result)), closing_step: closing.step })
 }))

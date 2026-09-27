@@ -1,0 +1,63 @@
+{
+  "name": "04 · Relances (toutes les heures, 8 h – 19 h)",
+  "nodes": [
+    {
+      "id": "f1",
+      "name": "Toutes les heures de 8 h à 19 h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8-19 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f2",
+      "name": "Supabase · run_followups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/run_followups",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Toutes les heures de 8 h à 19 h": {
+      "main": [
+        [
+          {
+            "node": "Supabase · run_followups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}

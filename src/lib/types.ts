@@ -34,9 +34,17 @@ export interface ProductAnalysis {
   source: 'ai' | 'rules'
 }
 
+export interface ProductClosing {
+  presentation_url?: string
+  presentation_label?: string
+  booking_url?: string
+  call_minutes?: number
+}
+
 export interface Product extends ProductInput {
   id: string
   knowledge?: string | null
+  closing?: ProductClosing
   analysis: ProductAnalysis | null
   analyzed_at: string | null
 }
@@ -99,6 +107,23 @@ export interface Prospect {
   archived_reason?: string | null
   do_not_contact?: boolean
   handoff_code?: string | null
+  closing_step?: ClosingStep | null
+  followups_sent?: number
+  next_followup_at?: string | null
+  followup_due?: boolean
+  last_followup_at?: string | null
+}
+
+export type ClosingStep = 'presentation_sent' | 'call_proposed' | 'call_booked'
+
+export interface WhatsAppTemplate {
+  id: string
+  purpose: 'followup_1' | 'followup_2'
+  name: string
+  language: string
+  body: string
+  status: string
+  rejected_reason: string | null
 }
 
 export type OutreachProfile = 'new' | 'warming' | 'established'
@@ -122,7 +147,7 @@ export interface KeywordTrigger {
   matches: number
 }
 
-export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff'
+export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff' | 'followup'
 
 export interface AiDraft {
   id: string
@@ -176,6 +201,8 @@ export interface Automation {
   min_confidence: number
   autopilot_whatsapp: boolean
   autopilot_social: boolean
+  followups_enabled: boolean
+  followup_delays: [number, number]
 }
 
 export interface Approval {

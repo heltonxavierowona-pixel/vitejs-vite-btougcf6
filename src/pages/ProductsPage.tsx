@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
 import { channelInfo } from '../data/channels'
-import { analyzeProduct, createProduct, listProducts, saveProductKnowledge } from '../lib/api'
-import type { Audience, OfferType, PriceLevel, Product, ProductAnalysis, ProductInput } from '../lib/types'
+import { analyzeProduct, createProduct, listProducts, saveProductClosing, saveProductKnowledge } from '../lib/api'
+import type { Audience, OfferType, PriceLevel, Product, ProductAnalysis, ProductClosing, ProductInput } from '../lib/types'
 
 const ROLE_LABEL = { outbound: 'Aller chercher', inbound: 'Attirer', closing: 'Conclure' } as const
 
@@ -189,6 +189,61 @@ function KnowledgeEditor({ product, onSaved }: { product: Product; onSaved: (kno
   )
 }
 
+// Supports de closing : présentation, puis prise de rendez-vous (Partie 6).
+function ClosingEditor({ product, onSaved }: { product: Product; onSaved: (closing: ProductClosing) => void }) {
+  const [c, setC] = useState<ProductClosing>(product.closing ?? {})
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const set = (patch: ProductClosing) => { setC({ ...c, ...patch }); setSaved(false) }
+  return (
+    <form
+      className="card form"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        const bad = [c.presentation_url, c.booking_url].filter(Boolean).find((u) => !/^https:\/\//.test(u!))
+        if (bad) { setError(`Lien invalide (https:// attendu) : ${bad}`); return }
+        setError(null)
+        await saveProductClosing(product.id, c)
+        onSaved(c)
+        setSaved(true)
+      }}
+    >
+      <div className="card-head">
+        <h2>Closing</h2>
+        <span className="muted small">1. présentation → 2. appel</span>
+      </div>
+      <p className="muted small">
+        Quand un prospect est prêt sur WhatsApp, l'IA lui envoie d'abord la présentation, puis, après sa réponse,
+        lui propose un appel. Les liens sont insérés tels quels : l'IA ne les écrit jamais elle-même.
+      </p>
+      <div className="form-row two">
+        <label>
+          Nom de la présentation
+          <input value={c.presentation_label ?? ''} onChange={(e) => set({ presentation_label: e.target.value })} placeholder="Présentation Core HR (PDF)" />
+        </label>
+        <label>
+          Lien de la présentation
+          <input type="url" value={c.presentation_url ?? ''} onChange={(e) => set({ presentation_url: e.target.value })} placeholder="https://…/presentation.pdf" />
+        </label>
+      </div>
+      <div className="form-row two">
+        <label>
+          Durée de l'appel (min)
+          <input type="number" min={5} max={120} value={c.call_minutes ?? ''} onChange={(e) => set({ call_minutes: e.target.value ? Number(e.target.value) : undefined })} placeholder="20" />
+        </label>
+        <label>
+          Lien de prise de rendez-vous <span className="muted small">(Calendly, Cal.com, Google Agenda…)</span>
+          <input type="url" value={c.booking_url ?? ''} onChange={(e) => set({ booking_url: e.target.value })} placeholder="https://cal.com/vous/demo" />
+        </label>
+      </div>
+      <p className="muted small">Sans lien de rendez-vous, l'IA demandera au prospect deux créneaux qui l'arrangent.</p>
+      {error && <p className="error">{error}</p>}
+      {saved && <p className="success">Enregistré.</p>}
+      <button className="btn btn-ghost">Enregistrer le closing</button>
+    </form>
+  )
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -261,6 +316,13 @@ export default function ProductsPage() {
               </button>
             </section>
           ) : null}
+          {current && !creating && (
+            <ClosingEditor
+              key={`closing-${current.id}`}
+              product={current}
+              onSaved={(closing) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, closing } : p)))}
+            />
+          )}
           {current && !creating && (
             <KnowledgeEditor
               key={current.id}

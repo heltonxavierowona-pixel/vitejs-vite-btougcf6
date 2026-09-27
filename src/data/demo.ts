@@ -1,5 +1,5 @@
 import type {
-  Approval, BrandVoice, ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect, RelationalProfile,
+  Approval, BrandVoice, WhatsAppTemplate, ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect, RelationalProfile,
 } from '../lib/types'
 import { analyzeWithRules } from '../lib/channelAdvisor'
 
@@ -30,11 +30,16 @@ const boutique = {
 export const demoProducts: Product[] = [
   {
     id: 'p1', ...coreHr, analysis: analyzeWithRules(coreHr), analyzed_at: ago(60),
+    closing: {
+      presentation_label: 'Présentation Core HR (PDF, 8 pages)', presentation_url: 'https://exemple.com/core-hr.pdf',
+      booking_url: 'https://cal.com/awa/demo-core-hr', call_minutes: 20,
+    },
     knowledge: 'Paie conforme CNPS et DIPE. Congés, contrats et dossiers du personnel. Essai gratuit 14 jours. '
       + 'Mise en place en 1 semaine. Support en français et en anglais.',
   },
   {
     id: 'p2', ...boutique, analysis: analyzeWithRules(boutique), analyzed_at: ago(30),
+    closing: { presentation_label: 'Catalogue Wax & Co', presentation_url: 'https://exemple.com/catalogue-wax.pdf' },
     knowledge: 'Robes et ensembles en pagne wax sur mesure. Délai de confection : 7 jours. '
       + 'Livraison à Douala et Yaoundé : 2 000 FCFA. Robe à partir de 25 000 FCFA. Paiement Mobile Money à la commande.',
   },
@@ -89,6 +94,8 @@ export const demoProspects: Prospect[] = [
   prospect({ id: 'r5', full_name: 'Nadine Fotso', job_title: 'DRH', company: 'Hôtel Akwa Palace', stage: 'contacted', fit_score: 82, fit_reasons: ['DRH hôtellerie, forte rotation du personnel'], contacted_at: ago(60 * 20), profile_url: 'https://www.linkedin.com/in/nadine-fotso' }),
   prospect({ id: 'r6', full_name: 'Paul Mbarga', product_id: 'p2', stage: 'replied', best_channel: null, source: 'facebook_inbound', fit_score: null }),
   prospect({ id: 'r7', full_name: 'Mireille N.', product_id: 'p2', stage: 'whatsapp', best_channel: null, source: 'lien:Bio Instagram', fit_score: null }),
+  prospect({ id: 'r9', full_name: 'Aline Mballa', job_title: 'DRH', company: 'Groupe Mballa BTP', stage: 'hot', fit_score: 84, best_channel: null, source: 'lien:Flyer salon RH Douala', closing_step: 'presentation_sent', followups_sent: 0, next_followup_at: ago(-60 * 24) }),
+  prospect({ id: 'r10', full_name: 'Brice Nana', job_title: 'Directeur administratif', company: 'Nana Distribution', stage: 'interested', fit_score: 71, fit_reasons: ['Gère la paie de 60 salariés'], followups_sent: 1, followup_due: true, last_followup_at: ago(10), next_followup_at: ago(-60 * 24 * 5), profile_url: 'https://www.linkedin.com/in/brice-nana' }),
   prospect({ id: 'r8', full_name: 'estelle_design', product_id: 'p2', stage: 'contacted', best_channel: null, source: 'instagram_comment', fit_score: null }),
 ]
 
@@ -140,4 +147,9 @@ export const demoApprovals: Approval[] = [
       { from: 'prospect', text: 'Vous livrez à Bonamoussadi avant samedi ?' },
     ],
   },
+]
+
+export const demoTemplates: WhatsAppTemplate[] = [
+  { id: 't-1fr', purpose: 'followup_1', name: 'closer_relance_1_fr', language: 'fr', status: 'APPROVED', rejected_reason: null, body: 'Bonjour {{1}}, je reviens vers vous au sujet de {{2}}. Avez-vous pu regarder ce que je vous ai envoyé ? Je reste disponible pour vos questions.' },
+  { id: 't-2fr', purpose: 'followup_2', name: 'closer_relance_2_fr', language: 'fr', status: 'PENDING', rejected_reason: null, body: 'Bonjour {{1}}, dernier petit message de ma part au sujet de {{2}}. Si ce n\'est plus d\'actualité, pas de souci. Sinon, répondez simplement ici et on reprend.' },
 ]

@@ -3,17 +3,18 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AiDraft, Approval, Automation, BrandVoice, DraftKind, Intent, IntentOutcome, RelationalProfile,
+  AiDraft, Approval, Automation, BrandVoice, ClosingStep, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
 } from './types'
 import type { ChannelId } from '../data/channels'
 import {
   demoAccounts, demoBrandVoice, demoConversations, demoEntryLinks, demoMessages, demoProducts, demoProfiles,
-  demoProspects, demoTriggers, demoApprovals,
+  demoProspects, demoTriggers, demoApprovals, demoTemplates,
 } from '../data/demo'
 import { demoDraft } from './demoWriter'
 import { classifyWithRules } from './intentRules'
+import { callText, presentationText } from './closing'
 import { detectSensitive, insertHandoffLink, MEDIA_PLACEHOLDER, whatsappLink } from '../../supabase/functions/_shared/prompts.ts'
 
 // Couche de données unique : Supabase si configuré, sinon données de démo en mémoire.
@@ -30,7 +31,11 @@ const demo = {
   outreachProfile: 'new' as OutreachProfile,
   profiles: { ...demoProfiles },
   brandVoice: { ...demoBrandVoice },
-  automation: { handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false } as Automation,
+  automation: {
+    handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false,
+    followups_enabled: true, followup_delays: [2, 5],
+  } as Automation,
+  templates: [...demoTemplates],
   approvals: [...demoApprovals],
 }
 
@@ -207,7 +212,8 @@ export function subscribeInbox(onChange: () => void): () => void {
 const PROSPECT_FIELDS =
   'id, product_id, full_name, job_title, company, country, language, segment_label, stage, fit_score, '
   + 'fit_reasons, best_channel, profile_url, source, contacted_at, created_at, intent, intent_confidence, '
-  + 'needs_review, archived_reason, do_not_contact, handoff_code'
+  + 'needs_review, archived_reason, do_not_contact, handoff_code, closing_step, followups_sent, next_followup_at, '
+  + 'followup_due, last_followup_at'
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString()
 
@@ -433,7 +439,10 @@ export async function markDraftUsed(draft: AiDraft, index: number) {
 export async function getAutomation(): Promise<Automation> {
   if (!supabase) return demo.automation
   const { data } = await supabase.from('organizations').select('automation').limit(1).single()
-  return { handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false, ...(data?.automation ?? {}) } as Automation
+  return {
+    handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false,
+    followups_enabled: true, followup_delays: [2, 5], ...(data?.automation ?? {}),
+  } as Automation
 }
 
 export async function saveAutomation(a: Automation) {
@@ -643,7 +652,17 @@ export async function simulateClientMessage(conversationId: string, text: string
   }
 
   const draft = await draftMessage({ kind: 'reply', prospect: { id: conv.prospect_id, full_name: conv.prospect_name }, conversation: conv })
-  const body = draft.variants[0].text
+  let body = draft.variants[0].text
+
+  // Closing (miroir de closing_next_action) : présentation, puis appel après sa réponse.
+  const pr = demo.prospects.find((p) => p.id === conv.prospect_id)
+  const product = demo.products.find((p) => p.id === pr?.product_id)
+  let step: ClosingStep | null = null
+  if (pr && product && conv.channel === 'whatsapp' && ['interested', 'whatsapp', 'hot'].includes(pr.stage)) {
+    const pres = presentationText(product)
+    if (!pr.closing_step && pres) { body = `${body}\n${pres}`; step = 'presentation_sent' }
+    else if (!pr.closing_step || pr.closing_step === 'presentation_sent') { body = `${body}\n${callText(product)}`; step = 'call_proposed' }
+  }
   const topics = [...new Set([...draft.sensitive.topics, ...detectSensitive(body), ...detectSensitive(text)])]
   const reply = {
     id: crypto.randomUUID(), conversation_id: conversationId, direction: 'outbound' as const,
@@ -658,9 +677,110 @@ export async function simulateClientMessage(conversationId: string, text: string
       expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(), context: [{ from: 'prospect', text }],
     }]
     notifyApprovals()
+    if (step) await recordClosingStep(conv.prospect_id, step)
     return 'pending_approval'
   }
+  if (step) await recordClosingStep(conv.prospect_id, step)
   demo.conversations = demo.conversations.map((c) => c.id === conversationId
     ? { ...c, last_message_preview: body, last_message_at: reply.sent_at } : c)
   return 'sent'
+}
+
+// ---------- Closing & relances (Partie 6) ----------
+
+export async function saveProductClosing(productId: string, closing: ProductClosing) {
+  if (!supabase) {
+    demo.products = demo.products.map((p) => (p.id === productId ? { ...p, closing } : p))
+    return
+  }
+  unwrap(await supabase.from('products').update({ closing }).eq('id', productId))
+}
+
+export async function getProspect(id: string): Promise<Prospect | null> {
+  if (!supabase) return demo.prospects.find((p) => p.id === id) ?? null
+  const { data } = await supabase.from('prospects').select(PROSPECT_FIELDS).eq('id', id).maybeSingle()
+  return (data as Prospect | null) ?? null
+}
+
+export async function getProduct(id: string | null): Promise<Product | null> {
+  if (!id) return null
+  if (!supabase) return demo.products.find((p) => p.id === id) ?? null
+  const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle()
+  return (data as Product | null) ?? null
+}
+
+export async function recordClosingStep(prospectId: string, step: ClosingStep) {
+  if (!supabase) {
+    demo.prospects = demo.prospects.map((p) => p.id !== prospectId ? p : {
+      ...p, closing_step: step,
+      stage: ['interested', 'whatsapp', 'replied', 'contacted'].includes(p.stage) ? 'hot' : p.stage,
+      next_followup_at: step === 'call_booked' ? null : p.next_followup_at,
+    })
+    return
+  }
+  unwrap(await supabase.rpc('record_closing_step', { p_prospect: prospectId, p_step: step }))
+}
+
+export async function setOutcome(prospectId: string, outcome: 'won' | 'lost') {
+  const patch = {
+    stage: outcome, next_followup_at: null, followup_due: false,
+    ...(outcome === 'lost' ? { archived_reason: 'manual', archived_at: new Date().toISOString() } : {}),
+  }
+  if (!supabase) {
+    demo.prospects = demo.prospects.map((p) => (p.id === prospectId ? { ...p, ...patch } as Prospect : p))
+    return
+  }
+  unwrap(await supabase.from('prospects').update(patch).eq('id', prospectId))
+}
+
+// Relance faite à la main (LinkedIn/X, Messenger/Instagram, ou modèle WhatsApp manquant).
+export async function markFollowedUp(prospect: Prospect, text?: string) {
+  if (text && (prospect.best_channel === 'linkedin' || prospect.best_channel === 'x')) {
+    await logAssistedMessage(prospect.id, 'outbound', text)
+  }
+  if (!supabase) {
+    demo.prospects = demo.prospects.map((p) => (p.id === prospect.id ? { ...p, followup_due: false } : p))
+    return
+  }
+  unwrap(await supabase.from('prospects').update({ followup_due: false }).eq('id', prospect.id))
+}
+
+export async function listTemplates(): Promise<WhatsAppTemplate[]> {
+  if (!supabase) return demo.templates
+  return unwrap(await supabase.from('whatsapp_templates').select('*').order('purpose').order('language'))
+}
+
+export async function manageTemplates(action: 'create_defaults' | 'sync'): Promise<WhatsAppTemplate[]> {
+  if (!supabase) {
+    if (action === 'sync') demo.templates = demo.templates.map((t) => ({ ...t, status: 'APPROVED' }))
+    return demo.templates
+  }
+  const { data, error } = await supabase.functions.invoke('whatsapp-templates', { body: { action } })
+  if (error) throw error
+  return data as WhatsAppTemplate[]
+}
+
+// Mode démo : fait avancer le temps pour voir les relances et l'abandon s'appliquer.
+export function advanceDemoTime(days: number): { sent: number; tasks: number; abandoned: number } {
+  const now = Date.now() + days * 86_400_000
+  const [, delay2] = demo.automation.followup_delays
+  const result = { sent: 0, tasks: 0, abandoned: 0 }
+  demo.prospects = demo.prospects.map((p) => {
+    if (!p.next_followup_at || new Date(p.next_followup_at).getTime() > now) return p
+    if (!['interested', 'whatsapp', 'hot'].includes(p.stage) || p.do_not_contact) return p
+    const sentCount = p.followups_sent ?? 0
+    if (sentCount >= 2) {
+      result.abandoned++
+      return { ...p, stage: 'ghosted', archived_reason: 'ghosted', next_followup_at: null, followup_due: false }
+    }
+    const onWhatsApp = demo.conversations.some((c) => c.prospect_id === p.id && c.channel === 'whatsapp')
+    const tpl = demo.templates.find((t) => t.purpose === `followup_${sentCount + 1}` && t.status === 'APPROVED')
+    if (onWhatsApp && tpl) result.sent++
+    else result.tasks++
+    return {
+      ...p, followups_sent: sentCount + 1, last_followup_at: new Date(now).toISOString(),
+      followup_due: !(onWhatsApp && tpl), next_followup_at: new Date(now + delay2 * 86_400_000).toISOString(),
+    }
+  })
+  return result
 }
