@@ -1,5 +1,5 @@
 {
-  "name": "00 · Health-check quotidien",
+  "name": "00 · Tâches quotidiennes (santé, abonnements, rappels)",
   "nodes": [
     {
       "id": "h1",
@@ -93,6 +93,48 @@
           "appendAttribution": false
         }
       }
+    },
+    {
+      "id": "h6",
+      "name": "Supabase · expire_subscriptions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/expire_subscriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      }
+    },
+    {
+      "id": "h7",
+      "name": "Supabase · billing_reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        600
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/billing_reminders",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -106,6 +148,16 @@
           },
           {
             "node": "Ping OpenRouter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase · expire_subscriptions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase · billing_reminders",
             "type": "main",
             "index": 0
           }

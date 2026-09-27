@@ -18,6 +18,12 @@ export async function chatJSON(opts: {
   orgId: string
   feature: string
 }): Promise<Record<string, unknown>> {
+  // Abonnement actif et quota mensuel d'actions IA de la formule non dépassé.
+  const quotaOk = await rest<boolean>('rpc/ai_quota_ok', { method: 'POST', body: { p_org: opts.orgId } })
+  if (quotaOk === false) {
+    throw new HttpError(402, 'Quota IA de votre formule atteint, ou abonnement inactif : voir « Abonnement »')
+  }
+
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${Deno.env.get('OPENROUTER_API_KEY')}`, 'Content-Type': 'application/json' },

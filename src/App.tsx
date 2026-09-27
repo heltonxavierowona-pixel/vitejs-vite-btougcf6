@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import ChannelsPage from './pages/ChannelsPage'
@@ -10,7 +10,10 @@ import ProductsPage from './pages/ProductsPage'
 import ProspectsPage from './pages/ProspectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ValidationsPage from './pages/ValidationsPage'
-import { APPROVALS_CHANGED, countPendingApprovals } from './lib/api'
+import { APPROVALS_CHANGED, BILLING_CHANGED, countPendingApprovals, getEntitlements, isPlatformAdmin } from './lib/api'
+import type { Entitlements } from './lib/types'
+import BillingPage from './pages/BillingPage'
+import AdminPage from './pages/AdminPage'
 import ReportsPage from './pages/ReportsPage'
 import Logo from './components/Logo'
 import './App.css'
@@ -23,6 +26,7 @@ const NAV = [
   { to: '/conversations', label: 'Conversations' },
   { to: '/validations', label: 'Validations' },
   { to: '/rapports', label: 'Rapports' },
+  { to: '/abonnement', label: 'Abonnement' },
   { to: '/parametres', label: 'Paramètres' },
 ]
 
@@ -55,9 +59,55 @@ function usePendingApprovals(enabled: boolean) {
   return count
 }
 
+// Formule et accès de l'organisation (bandeau d'essai / d'impayé).
+function useEntitlements(enabled: boolean) {
+  const location = useLocation()
+  const [ent, setEnt] = useState<{ e: Entitlements; trialDays: number | null } | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    const update = () => getEntitlements()
+      .then((e) => setEnt(e && {
+        e,
+        trialDays: e.trial_ends_at ? Math.ceil((new Date(e.trial_ends_at).getTime() - Date.now()) / 86_400_000) : null,
+      }))
+      .catch(() => {})
+    update()
+    window.addEventListener(BILLING_CHANGED, update)
+    return () => window.removeEventListener(BILLING_CHANGED, update)
+  }, [enabled, location.pathname])
+  return ent
+}
+
+function useIsAdmin(enabled: boolean) {
+  const [admin, setAdmin] = useState(false)
+  useEffect(() => {
+    if (enabled) isPlatformAdmin().then(setAdmin).catch(() => {})
+  }, [enabled])
+  return admin
+}
+
+function BillingBanner({ state }: { state: { e: Entitlements; trialDays: number | null } | null }) {
+  const { pathname } = useLocation()
+  if (!state || pathname === '/abonnement' || pathname === '/admin') return null
+  const { e: ent, trialDays: days } = state
+  let text: string | null = null
+  if (!ent.has_access) text = 'Votre abonnement est inactif : l\'agent est en pause. Choisissez une formule pour le relancer.'
+  else if (ent.status === 'past_due') text = 'Le dernier paiement a échoué. Mettez à jour votre moyen de paiement pour éviter l\'interruption.'
+  else if (ent.status === 'trialing' && days != null && days <= 3) text = `Votre essai gratuit se termine dans ${Math.max(days, 0)} jour(s).`
+  if (!text) return null
+  return (
+    <div className={`billing-banner ${ent.has_access ? '' : 'blocked'}`} role="status">
+      <span>{text}</span>
+      <Link className="btn small" to="/abonnement">Voir les formules</Link>
+    </div>
+  )
+}
+
 export default function App() {
   const session = useSession()
   const pending = usePendingApprovals(!supabase || !!session)
+  const ent = useEntitlements(!supabase || !!session)
+  const admin = useIsAdmin(!supabase || !!session)
 
   if (supabase && session === undefined) return null
   if (supabase && !session) return <LoginPage />
@@ -75,6 +125,7 @@ export default function App() {
               {n.to === '/validations' && pending > 0 && <span className="nav-badge">{pending}</span>}
             </NavLink>
           ))}
+          {admin && <NavLink to="/admin" className="nav-admin">Espace propriétaire</NavLink>}
         </nav>
         <div className="env">
           {session ? (
@@ -89,6 +140,7 @@ export default function App() {
       </aside>
 
       <main className="content">
+        <BillingBanner state={ent} />
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/produits" element={<ProductsPage />} />
@@ -98,6 +150,8 @@ export default function App() {
           <Route path="/parametres" element={<SettingsPage />} />
           <Route path="/validations" element={<ValidationsPage />} />
           <Route path="/rapports" element={<ReportsPage />} />
+          <Route path="/abonnement" element={<BillingPage />} />
+          {admin && <Route path="/admin" element={<AdminPage />} />}
         </Routes>
       </main>
     </div>

@@ -247,3 +247,70 @@ export interface AlertSettings {
   telegram_username: string | null
   telegram_linked: boolean
 }
+
+// ---------- Abonnements (paiements) ----------
+
+export type Currency = 'XAF' | 'EUR' | 'USD'
+export type BillingInterval = 'month' | 'year'
+export type PaymentProvider = 'stripe' | 'paypal' | 'flutterwave'
+
+export interface Plan {
+  id: string
+  name: string
+  description: string
+  prices: Record<Currency, Record<BillingInterval, number>>
+  limits: { products: number; whatsapp_numbers: number; ai_actions: number; members: number }
+  features: string[]
+}
+
+export interface Entitlements {
+  plan_id: string
+  plan_name: string
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
+  provider: PaymentProvider | 'manual' | null
+  trial_ends_at: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  has_access: boolean
+  limits: Plan['limits']
+  usage: Plan['limits']
+}
+
+export interface PaymentRow {
+  id: string
+  provider: string
+  amount: number
+  currency: string
+  status: 'succeeded' | 'failed' | 'refunded'
+  paid_at: string
+}
+
+export interface AdminSubscription {
+  organization_id: string
+  organization: string
+  owner_email: string | null
+  plan: string
+  plan_id: string
+  status: Entitlements['status']
+  provider: string | null
+  currency: string | null
+  amount: number | null
+  interval: BillingInterval | null
+  mrr_xaf: number
+  trial_ends_at: string | null
+  current_period_end: string | null
+  created_at: string
+}
+
+export interface AdminStats {
+  currency: 'XAF'
+  kpis: {
+    mrr: number; arr: number; collected_this_month: number; active: number; trialing: number; past_due: number
+    canceled_this_month: number; organizations: number; trial_conversion: number | null; ai_cost_this_month_xaf: number
+  }
+  monthly: { month: string; revenue: number; ai_cost: number; signups: number }[]
+  by_plan: { plan: string; subscribers: number; mrr: number }[]
+  by_provider: { provider: string; revenue: number }[]
+  subscriptions: AdminSubscription[]
+  recent_payments: { organization: string; provider: string; amount: number; currency: string; amount_xaf: number; status: string; paid_at: string }[]
+}

@@ -3,6 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
+  AdminStats, BillingInterval, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
   AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
@@ -13,6 +14,7 @@ import {
   demoProspects, demoTriggers, demoApprovals, demoTemplates,
 } from '../data/demo'
 import { demoDraft } from './demoWriter'
+import { demoAdminStats, demoEntitlements, demoPayments, demoPlans } from '../data/demoBilling'
 import { classifyWithRules } from './intentRules'
 import { callText, presentationText } from './closing'
 import { detectSensitive, insertHandoffLink, MEDIA_PLACEHOLDER, whatsappLink } from '../../supabase/functions/_shared/prompts.ts'
@@ -907,4 +909,87 @@ export async function unlinkTelegram() {
 export async function sendTestAlert() {
   if (!supabase) return
   unwrap(await supabase.rpc('send_test_alert'))
+}
+
+// ---------- Abonnements & paiements ----------
+
+export const BILLING_CHANGED = 'numera:billing-changed'
+const billingDemo = { entitlements: { ...demoEntitlements }, payments: [...demoPayments] }
+
+export async function listPlans(): Promise<Plan[]> {
+  if (!supabase) return demoPlans
+  return unwrap(await supabase.from('plans').select('id, name, description, prices, limits, features').order('sort'))
+}
+
+export async function getEntitlements(): Promise<Entitlements | null> {
+  if (!supabase) return billingDemo.entitlements
+  return unwrap(await supabase.rpc('my_entitlements')) as Entitlements | null
+}
+
+export async function listMyPayments(): Promise<PaymentRow[]> {
+  if (!supabase) return billingDemo.payments
+  return unwrap(await supabase.from('payments').select('id, provider, amount, currency, status, paid_at')
+    .order('paid_at', { ascending: false }).limit(24))
+}
+
+export async function enabledProviders(): Promise<Record<PaymentProvider, boolean>> {
+  const all = { stripe: true, paypal: true, flutterwave: true }
+  if (!supabase) return all
+  const { data } = await supabase.from('platform_settings').select('value').eq('key', 'providers').maybeSingle()
+  return { ...all, ...(data?.value ?? {}) }
+}
+
+// Renvoie l'URL de paiement du prestataire (redirection). En démo : paiement simulé, renvoie null.
+export async function startCheckout(o: { plan: Plan; interval: BillingInterval; currency: Currency; provider: PaymentProvider }): Promise<string | null> {
+  if (!supabase) {
+    const now = Date.now()
+    const amount = o.plan.prices[o.currency][o.interval]
+    billingDemo.entitlements = {
+      ...billingDemo.entitlements, plan_id: o.plan.id, plan_name: o.plan.name, status: 'active', provider: o.provider,
+      trial_ends_at: null, has_access: true, limits: o.plan.limits,
+      current_period_end: new Date(now + (o.interval === 'year' ? 365 : 30) * 86_400_000).toISOString(),
+    }
+    billingDemo.payments = [{ id: crypto.randomUUID(), provider: o.provider, amount, currency: o.currency, status: 'succeeded', paid_at: new Date(now).toISOString() }, ...billingDemo.payments]
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return null
+  }
+  const { data, error } = await supabase.functions.invoke('billing-checkout', {
+    body: { plan_id: o.plan.id, interval: o.interval, currency: o.currency, provider: o.provider },
+  })
+  if (error) throw error
+  return (data as { url: string }).url
+}
+
+export async function manageBilling(action: 'portal' | 'cancel'): Promise<string | null> {
+  if (!supabase) {
+    if (action === 'cancel') {
+      billingDemo.entitlements = { ...billingDemo.entitlements, status: 'canceled', cancel_at_period_end: true }
+      window.dispatchEvent(new Event(BILLING_CHANGED))
+    }
+    return null
+  }
+  const { data, error } = await supabase.functions.invoke('billing-manage', { body: { action } })
+  if (error) throw error
+  window.dispatchEvent(new Event(BILLING_CHANGED))
+  return (data as { url?: string }).url ?? null
+}
+
+// ---------- Espace propriétaire ----------
+
+export async function isPlatformAdmin(): Promise<boolean> {
+  if (!supabase) return true
+  const { data } = await supabase.rpc('is_platform_admin')
+  return data === true
+}
+
+export async function getAdminStats(months: number): Promise<AdminStats> {
+  if (!supabase) return demoAdminStats(months)
+  return unwrap(await supabase.rpc('admin_stats', { p_months: months })) as AdminStats
+}
+
+export async function adminGrant(o: { organizationId: string; planId: string; days: number; amount: number | null; currency: Currency }) {
+  if (!supabase) return
+  unwrap(await supabase.rpc('admin_grant', {
+    p_org: o.organizationId, p_plan: o.planId, p_days: o.days, p_amount: o.amount, p_currency: o.currency,
+  }))
 }

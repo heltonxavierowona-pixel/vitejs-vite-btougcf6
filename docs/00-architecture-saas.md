@@ -128,4 +128,5 @@ Sans ces validations, seuls les comptes ajoutés comme **testeurs** de ton app p
 | 04 | Détection d'intérêt (7 intentions, seuil de confiance) & bascule WhatsApp par lien avec code personnel | ✅ Validée |
 | 05 | Pilote automatique WhatsApp, validations (prix, contrat…), passage de relais, reprise en main, fusion des doublons | ✅ Validée |
 | 06 | Closing (présentation puis appel) & relances (2 max, modèles WhatsApp, puis abandon) | ✅ Validée |
-| 07 | Tableau de bord visuel & alertes immédiates (Telegram par client, e-mail) | **Livrée — en attente de validation** |
+| 07 | Tableau de bord visuel & alertes immédiates (Telegram par client, e-mail) | ✅ Validée |
+| 08 | Abonnements (Flutterwave, Stripe, PayPal), limites par formule, espace propriétaire (revenus & abonnés) | **Livrée — en attente de validation** |

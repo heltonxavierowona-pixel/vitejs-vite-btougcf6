@@ -66,6 +66,8 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
    ```bash
    supabase functions deploy analyze-product qualify-prospects draft-message whatsapp-connect meta-connect whatsapp-templates
    supabase functions deploy update-profile classify-message autopilot-reply --no-verify-jwt   # appelées par n8n, protégées par NUMERA_WEBHOOK_SECRET
+   supabase functions deploy billing-checkout billing-manage
+   supabase functions deploy billing-webhook --no-verify-jwt   # appelée par Stripe / PayPal / Flutterwave, signature vérifiée (docs/08)
    supabase secrets set --env-file supabase/functions/.env
    ```
 4. **Database Webhooks** (Database → Webhooks), table `messages`, en-tête `x-numera-secret: <NUMERA_WEBHOOK_SECRET>` :
