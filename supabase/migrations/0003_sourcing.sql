@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0003 : ciblage & sourcing par produit (Partie 2)
+-- Numera Agentic — 0003 : ciblage & sourcing par produit (Partie 2)
 --   Sortant (LinkedIn, X)  : import semi-manuel + qualification IA + file du jour
 --   Entrant (FB, IG)       : mots-clés en commentaire → réponse privée automatique
 --   Entrant (WhatsApp)     : liens wa.me par produit avec code de référence

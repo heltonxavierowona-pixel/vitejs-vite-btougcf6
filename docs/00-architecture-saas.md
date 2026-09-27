@@ -1,4 +1,4 @@
-# Le Closer — Architecture SaaS
+# Numera Agentic — Architecture SaaS
 
 > Plateforme de prospection IA **ouverte à tous** : chaque utilisateur décrit son produit,
 > connecte ses propres comptes (WhatsApp, Facebook, Instagram), et discute avec ses clients
@@ -11,12 +11,12 @@
 1. **L'agent part du produit, pas d'une cible figée.**
    L'utilisateur décrit ce qu'il vend. L'IA en déduit les cibles, **les réseaux adaptés** (avec un score et les raisons), le ton, les langues et les accroches. Une boutique de wax n'est pas prospectée comme un logiciel RH.
 2. **Chaque utilisateur connecte SES comptes.**
-   Son numéro WhatsApp Business (en le gardant dans son application grâce à la *coexistence*), sa Page Facebook, son Instagram professionnel. Le Closer ne possède aucun numéro de client.
+   Son numéro WhatsApp Business (en le gardant dans son application grâce à la *coexistence*), sa Page Facebook, son Instagram professionnel. Numera Agentic ne possède aucun numéro de client.
 3. **Le client final ne change rien à ses habitudes.**
    Il écrit sur WhatsApp, Messenger ou Instagram. L'utilisateur (et l'IA) lui répondent depuis la boîte de réception de la plateforme.
 
 ```
-   CLIENT FINAL                         LE CLOSER                        UTILISATEUR
+   CLIENT FINAL                         NUMERA AGENTIC                        UTILISATEUR
  (reste sur ses apps)              (plateforme SaaS)                (entreprise abonnée)
 
  WhatsApp  ─┐                                                       ┌─ Produits : décrit son offre
@@ -32,7 +32,7 @@
 
 Ces règles viennent des plateformes. Le conseiller de canaux les applique toujours, même si l'IA propose autre chose.
 
-| Canal | Premier message à froid | Réponses | Rôle dans Le Closer |
+| Canal | Premier message à froid | Réponses | Rôle dans Numera Agentic |
 |---|---|---|---|
 | **LinkedIn** | Pas d'API de messagerie ; l'automatisation est interdite par ses conditions | — | **Assisté** : l'IA rédige, l'utilisateur envoie depuis son compte |
 | **X** | API payante | — | **Assisté** |
@@ -46,7 +46,7 @@ Ces règles viennent des plateformes. Le conseiller de canaux les applique toujo
 
 ## 3. Comment un utilisateur connecte ses comptes
 
-Pour que des milliers d'utilisateurs connectent **leurs propres** comptes, Le Closer doit devenir **Tech Provider Meta** (fournisseur technologique). C'est le même statut que les outils du marché (Respond.io, Wati, etc.).
+Pour que des milliers d'utilisateurs connectent **leurs propres** comptes, Numera Agentic doit devenir **Tech Provider Meta** (fournisseur technologique). C'est le même statut que les outils du marché (Respond.io, Wati, etc.).
 
 | Compte | Mécanisme officiel | Ce que voit l'utilisateur |
 |---|---|---|
@@ -55,7 +55,7 @@ Pour que des milliers d'utilisateurs connectent **leurs propres** comptes, Le Cl
 
 ### WhatsApp : la coexistence
 
-La **coexistence** permet à l'utilisateur de garder son numéro **et** son application WhatsApp Business sur son téléphone, tout en le connectant à Le Closer. Les messages arrivent aux deux endroits. C'est exactement ce que tu décris.
+La **coexistence** permet à l'utilisateur de garder son numéro **et** son application WhatsApp Business sur son téléphone, tout en le connectant à Numera Agentic. Les messages arrivent aux deux endroits. C'est exactement ce que tu décris.
 
 À savoir :
 - **Disponibilité par pays à vérifier pour le Cameroun** avant le lancement (Meta l'ouvre progressivement). Sinon, repli sur « nouveau numéro » (bouton déjà prévu).
@@ -68,7 +68,7 @@ En Tech Provider, **chaque utilisateur ajoute son propre moyen de paiement chez 
 
 ### ⚠️ Restriction : pas de WhatsApp « par QR code »
 
-Beaucoup d'outils utilisent des bibliothèques non officielles (connexion par QR code comme WhatsApp Web). C'est plus rapide à lancer, mais **interdit par WhatsApp** : les numéros de tes clients se font bannir, souvent sans retour possible, et c'est ta plateforme qui en porte la responsabilité. Le Closer n'utilise que l'API officielle.
+Beaucoup d'outils utilisent des bibliothèques non officielles (connexion par QR code comme WhatsApp Web). C'est plus rapide à lancer, mais **interdit par WhatsApp** : les numéros de tes clients se font bannir, souvent sans retour possible, et c'est ta plateforme qui en porte la responsabilité. Numera Agentic n'utilise que l'API officielle.
 
 ---
 

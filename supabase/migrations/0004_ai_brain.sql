@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0004 : cerveau IA (Partie 3)
+-- Numera Agentic — 0004 : cerveau IA (Partie 3)
 --   * voix de marque de l'utilisateur + connaissances produit (source de vérité de l'IA)
 --   * profil relationnel enrichi (langue, tu/vous, style, signaux d'achat)
 --   * brouillons IA (variantes proposées, variante choisie)

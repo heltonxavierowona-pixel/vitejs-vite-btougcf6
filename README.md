@@ -1,4 +1,6 @@
-# Le Closer
+# NUMERA AGENTIC
+
+> Premier produit de la gamme **NUMERA**. Logo : `public/numera-mark.svg` (symbole commun à la gamme) et `src/components/Logo.tsx` (symbole + nom du produit). Couleurs : bleu `#1a56db` → vert `#059669`.
 
 Plateforme SaaS de prospection IA. Chaque utilisateur décrit son produit : l'agent en déduit les cibles et les réseaux adaptés (LinkedIn, X, Facebook, Instagram), puis la conversation se conclut sur WhatsApp. L'utilisateur connecte ses propres comptes et répond à ses clients depuis la plateforme, pendant que ses clients restent sur WhatsApp, Messenger ou Instagram.
 

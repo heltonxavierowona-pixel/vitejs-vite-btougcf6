@@ -10,7 +10,7 @@
         0,
         200
       ],
-      "webhookId": "closer-telegram-bot",
+      "webhookId": "numera-telegram-bot",
       "parameters": {
         "updates": [
           "message"
@@ -28,7 +28,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Message reçu par le bot : « /start <code> » relie le Telegram à une organisation Le Closer.\nconst msg = $input.first().json.message || {};\nconst text = String(msg.text || '').trim();\nconst match = text.match(/^\\/start\\s+(lc_[a-f0-9]{32})$/);\nreturn [{ json: {\n  chat_id: String(msg.chat && msg.chat.id),\n  username: (msg.from && (msg.from.username || msg.from.first_name)) || null,\n  code: match ? match[1] : null,\n} }];\n"
+        "jsCode": "// Message reçu par le bot : « /start <code> » relie le Telegram à une organisation Numera Agentic.\nconst msg = $input.first().json.message || {};\nconst text = String(msg.text || '').trim();\nconst match = text.match(/^\\/start\\s+(nm_[a-f0-9]{32})$/);\nreturn [{ json: {\n  chat_id: String(msg.chat && msg.chat.id),\n  username: (msg.from && (msg.from.username || msg.from.first_name)) || null,\n  code: match ? match[1] : null,\n} }];\n"
       }
     },
     {
@@ -95,7 +95,7 @@
       ],
       "parameters": {
         "chatId": "={{ $('Lire la commande').item.json.chat_id }}",
-        "text": "={{ $json.organization ? '✅ Alertes Le Closer activées pour « ' + $json.organization + ' ». Vous serez prévenu dès qu\\'un prospect devient chaud.' : '⚠️ Lien expiré ou déjà utilisé. Générez un nouveau lien dans Le Closer → Paramètres → Alertes.' }}",
+        "text": "={{ $json.organization ? '✅ Alertes Numera Agentic activées pour « ' + $json.organization + ' ». Vous serez prévenu dès qu\\'un prospect devient chaud.' : '⚠️ Lien expiré ou déjà utilisé. Générez un nouveau lien dans Numera Agentic → Paramètres → Alertes.' }}",
         "additionalFields": {
           "appendAttribution": false,
           "disable_web_page_preview": true
@@ -113,7 +113,7 @@
       ],
       "parameters": {
         "chatId": "={{ $json.chat_id }}",
-        "text": "Bonjour ! Pour recevoir vos alertes, ouvrez Le Closer → Paramètres → Alertes → « Connecter Telegram ».",
+        "text": "Bonjour ! Pour recevoir vos alertes, ouvrez Numera Agentic → Paramètres → Alertes → « Connecter Telegram ».",
         "additionalFields": {
           "appendAttribution": false,
           "disable_web_page_preview": true

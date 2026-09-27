@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Logo from '../components/Logo'
 import { supabase } from '../lib/supabase'
 
 // Connexion / inscription par lien magique. À la première connexion,
@@ -23,7 +24,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <form className="card form login-card" onSubmit={submit}>
-        <div className="brand"><span className="brand-mark">C</span> Le Closer</div>
+        <div className="brand"><Logo size={44} /></div>
         <p className="muted">L'agent IA qui prospecte sur les réseaux et conclut sur WhatsApp.</p>
         {sent ? (
           <p className="success">Lien de connexion envoyé à {email}. Ouvrez votre boîte mail.</p>

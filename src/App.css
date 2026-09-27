@@ -7,11 +7,12 @@
   display: flex; flex-direction: column; gap: 20px;
   position: sticky; top: 0; height: 100vh;
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; padding: 0 8px; }
-.brand-mark {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
-  background: var(--brand); color: #fff; font-weight: 800;
-}
+.brand { display: flex; align-items: center; padding: 0 8px; }
+.logo { display: inline-flex; align-items: center; gap: 10px; }
+.numera-mark { flex: none; display: block; }
+.logo-text { display: grid; line-height: 1.05; }
+.logo-brand { font-weight: 800; font-size: 1.05rem; letter-spacing: .12em; color: var(--text); }
+.logo-product { font-weight: 700; font-size: .68rem; letter-spacing: .32em; color: var(--brand-green); }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 .sidebar nav a {
   padding: 8px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 500;

@@ -543,7 +543,7 @@ export async function resolveReview(prospectId: string, intent: Intent): Promise
 // ---------- Pilote automatique & validations (Partie 5) ----------
 
 // Signal local pour rafraîchir le badge « Validations » sans attendre.
-export const APPROVALS_CHANGED = 'closer:approvals-changed'
+export const APPROVALS_CHANGED = 'numera:approvals-changed'
 const notifyApprovals = () => window.dispatchEvent(new Event(APPROVALS_CHANGED))
 
 export async function setAiPaused(conversationId: string, paused: boolean) {

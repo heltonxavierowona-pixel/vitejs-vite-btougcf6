@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0008 : tableau de bord & alertes (Partie 7)
+-- Numera Agentic — 0008 : tableau de bord & alertes (Partie 7)
 --   * alertes immédiates (Telegram et/ou e-mail) : prospect chaud, réponse à valider,
 --     l'IA passe la main, vente gagnée
 --   * chaque utilisateur relie SON Telegram (lien t.me/<bot>?start=<code>)
@@ -26,8 +26,8 @@ create or replace function protect_org_columns()
 returns trigger language plpgsql
 as $$
 begin
-  -- closer.trusted : posé (pour la transaction seulement) par les fonctions serveur ci-dessous.
-  if auth.uid() is not null and coalesce(current_setting('closer.trusted', true), '') <> 'on' then
+  -- numera.trusted : posé (pour la transaction seulement) par les fonctions serveur ci-dessous.
+  if auth.uid() is not null and coalesce(current_setting('numera.trusted', true), '') <> 'on' then
     new.plan := old.plan;
     new.telegram_link_code := old.telegram_link_code;
     if new.telegram_chat_id is not null then
@@ -196,11 +196,11 @@ declare v_org uuid; v_code text;
 begin
   select organization_id into v_org from organization_members where user_id = auth.uid() limit 1;
   if v_org is null then raise exception 'Organisation introuvable'; end if;
-  perform set_config('closer.trusted', 'on', true);
+  perform set_config('numera.trusted', 'on', true);
   update organizations set telegram_link_code = coalesce(telegram_link_code,
-      'lc_' || replace(gen_random_uuid()::text, '-', ''))
+      'nm_' || replace(gen_random_uuid()::text, '-', ''))
    where id = v_org returning telegram_link_code into v_code;
-  perform set_config('closer.trusted', 'off', true);
+  perform set_config('numera.trusted', 'off', true);
   return v_code;
 end $$;
 
@@ -211,12 +211,12 @@ language plpgsql security definer set search_path = public
 as $$
 declare v_name text;
 begin
-  perform set_config('closer.trusted', 'on', true);
+  perform set_config('numera.trusted', 'on', true);
   update organizations set telegram_chat_id = p_chat_id, telegram_username = p_username,
     telegram_link_code = null            -- code à usage unique
    where telegram_link_code = p_code
   returning name into v_name;
-  perform set_config('closer.trusted', 'off', true);
+  perform set_config('numera.trusted', 'off', true);
   return jsonb_build_object('organization', v_name);   -- organization = null si code inconnu
 end $$;
 revoke execute on function link_telegram(text, text, text) from public, anon, authenticated;
@@ -230,7 +230,7 @@ begin
   select organization_id into v_org from organization_members where user_id = auth.uid() limit 1;
   if v_org is null then raise exception 'Organisation introuvable'; end if;
   insert into alerts (organization_id, kind, title, body, link_path)
-  values (v_org, 'test', '✅ Alerte de test Le Closer', 'Vos alertes fonctionnent.', '/');
+  values (v_org, 'test', '✅ Alerte de test Numera Agentic', 'Vos alertes fonctionnent.', '/');
 end $$;
 
 -- ---------- Statistiques du tableau de bord ------------------------------

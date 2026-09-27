@@ -150,6 +150,6 @@ export const demoApprovals: Approval[] = [
 ]
 
 export const demoTemplates: WhatsAppTemplate[] = [
-  { id: 't-1fr', purpose: 'followup_1', name: 'closer_relance_1_fr', language: 'fr', status: 'APPROVED', rejected_reason: null, body: 'Bonjour {{1}}, je reviens vers vous au sujet de {{2}}. Avez-vous pu regarder ce que je vous ai envoyé ? Je reste disponible pour vos questions.' },
-  { id: 't-2fr', purpose: 'followup_2', name: 'closer_relance_2_fr', language: 'fr', status: 'PENDING', rejected_reason: null, body: 'Bonjour {{1}}, dernier petit message de ma part au sujet de {{2}}. Si ce n\'est plus d\'actualité, pas de souci. Sinon, répondez simplement ici et on reprend.' },
+  { id: 't-1fr', purpose: 'followup_1', name: 'numera_relance_1_fr', language: 'fr', status: 'APPROVED', rejected_reason: null, body: 'Bonjour {{1}}, je reviens vers vous au sujet de {{2}}. Avez-vous pu regarder ce que je vous ai envoyé ? Je reste disponible pour vos questions.' },
+  { id: 't-2fr', purpose: 'followup_2', name: 'numera_relance_2_fr', language: 'fr', status: 'PENDING', rejected_reason: null, body: 'Bonjour {{1}}, dernier petit message de ma part au sujet de {{2}}. Si ce n\'est plus d\'actualité, pas de souci. Sinon, répondez simplement ici et on reprend.' },
 ]

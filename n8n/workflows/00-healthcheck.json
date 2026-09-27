@@ -71,7 +71,7 @@
       ],
       "parameters": {
         "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "⚠️ Le Closer : Supabase injoignable ({{ $json.error?.message || \"erreur\" }})",
+        "text": "⚠️ Numera Agentic : Supabase injoignable ({{ $json.error?.message || \"erreur\" }})",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -88,7 +88,7 @@
       ],
       "parameters": {
         "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "⚠️ Le Closer : OpenRouter ne répond pas (clé, crédit ou modèle ?)",
+        "text": "⚠️ Numera Agentic : OpenRouter ne répond pas (clé, crédit ou modèle ?)",
         "additionalFields": {
           "appendAttribution": false
         }

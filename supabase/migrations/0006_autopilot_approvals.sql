@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0006 : conversation WhatsApp autonome & validations (Partie 5)
+-- Numera Agentic — 0006 : conversation WhatsApp autonome & validations (Partie 5)
 --   * pilote automatique : l'IA répond seule sur WhatsApp (texte uniquement)
 --   * sujets sensibles (prix, remise, devis, contrat, paiement) → validation humaine
 --   * passage de relais : demande d'un humain, mécontentement, info inconnue, vocal

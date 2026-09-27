@@ -10,10 +10,10 @@
         0,
         200
       ],
-      "webhookId": "closer-outbound",
+      "webhookId": "numera-outbound",
       "parameters": {
         "httpMethod": "POST",
-        "path": "closer/outbound",
+        "path": "numera/outbound",
         "responseMode": "onReceived",
         "options": {}
       }
@@ -28,7 +28,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages sortants mis en file depuis la plateforme.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'outbound' || r.status !== 'queued') return [];\n// UPDATE : seul le passage « en attente de validation » → « en file » déclenche un envoi.\nif (body.type === 'UPDATE' && (body.old_record || {}).status !== 'pending_approval') return [];\nreturn [{ json: { message_id: r.id } }];\n"
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages sortants mis en file depuis la plateforme.\nconst { headers, body } = $input.first().json;\nif (headers['x-numera-secret'] !== $env.NUMERA_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'outbound' || r.status !== 'queued') return [];\n// UPDATE : seul le passage « en attente de validation » → « en file » déclenche un envoi.\nif (body.type === 'UPDATE' && (body.old_record || {}).status !== 'pending_approval') return [];\nreturn [{ json: { message_id: r.id } }];\n"
       }
     },
     {

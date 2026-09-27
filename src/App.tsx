@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage'
 import ValidationsPage from './pages/ValidationsPage'
 import { APPROVALS_CHANGED, countPendingApprovals } from './lib/api'
 import ReportsPage from './pages/ReportsPage'
+import Logo from './components/Logo'
 import './App.css'
 
 const NAV = [
@@ -65,7 +66,7 @@ export default function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">C</span> Le Closer
+          <Logo />
         </div>
         <nav>
           {NAV.map((n) => (

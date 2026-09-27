@@ -4,8 +4,9 @@
   --text: #16181d;
   --muted: #5d6470;
   --border: #e3e6eb;
-  --brand: #3b5bdb;
-  --brand-soft: #e8edff;
+  --brand: #1a56db;        /* Bleu NUMERA */
+  --brand-soft: #e8effd;
+  --brand-green: #087a55;  /* Vert NUMERA (texte, contraste AA sur fond clair) */
   --ok: #1e8e5a;
   --ok-soft: #e3f5ec;
   --warn: #9a5b00;
@@ -24,8 +25,9 @@
     --text: #e8eaee;
     --muted: #9aa1ad;
     --border: #272b34;
-    --brand: #7c93ff;
-    --brand-soft: #1e2540;
+    --brand: #6b9bff;
+    --brand-soft: #16244a;
+    --brand-green: #34d399;
     --ok: #4cc38a;
     --ok-soft: #13291f;
     --warn: #f0b04a;

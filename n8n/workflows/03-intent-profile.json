@@ -10,10 +10,10 @@
         0,
         200
       ],
-      "webhookId": "closer-profile",
+      "webhookId": "numera-profile",
       "parameters": {
         "httpMethod": "POST",
-        "path": "closer/profile",
+        "path": "numera/profile",
         "responseMode": "onReceived",
         "options": {}
       }
@@ -28,7 +28,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages reçus des prospects.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'inbound') return [];\nreturn [{ json: { conversation_id: r.conversation_id, message_id: r.id } }];\n"
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages reçus des prospects.\nconst { headers, body } = $input.first().json;\nif (headers['x-numera-secret'] !== $env.NUMERA_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'inbound') return [];\nreturn [{ json: { conversation_id: r.conversation_id, message_id: r.id } }];\n"
       }
     },
     {
@@ -40,7 +40,7 @@
         440,
         200
       ],
-      "webhookId": "closer-profile-wait",
+      "webhookId": "numera-profile-wait",
       "parameters": {
         "amount": 20
       }
@@ -62,8 +62,8 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "x-closer-secret",
-              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+              "name": "x-numera-secret",
+              "value": "={{ $env.NUMERA_WEBHOOK_SECRET }}"
             }
           ]
         },
@@ -89,8 +89,8 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "x-closer-secret",
-              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+              "name": "x-numera-secret",
+              "value": "={{ $env.NUMERA_WEBHOOK_SECRET }}"
             }
           ]
         },
@@ -117,8 +117,8 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "x-closer-secret",
-              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+              "name": "x-numera-secret",
+              "value": "={{ $env.NUMERA_WEBHOOK_SECRET }}"
             }
           ]
         },

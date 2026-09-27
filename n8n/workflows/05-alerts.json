@@ -10,10 +10,10 @@
         0,
         200
       ],
-      "webhookId": "closer-alerts",
+      "webhookId": "numera-alerts",
       "parameters": {
         "httpMethod": "POST",
-        "path": "closer/alerts",
+        "path": "numera/alerts",
         "responseMode": "onReceived",
         "options": {}
       }
@@ -28,7 +28,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Webhook de base de données Supabase (INSERT sur alerts).\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nif (body.table !== 'alerts' || body.type !== 'INSERT') return [];\nreturn [{ json: { alert_id: body.record.id } }];\n"
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur alerts).\nconst { headers, body } = $input.first().json;\nif (headers['x-numera-secret'] !== $env.NUMERA_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nif (body.table !== 'alerts' || body.type !== 'INSERT') return [];\nreturn [{ json: { alert_id: body.record.id } }];\n"
       }
     },
     {

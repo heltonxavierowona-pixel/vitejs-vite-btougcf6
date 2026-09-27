@@ -1,4 +1,4 @@
-# Le Closer — n8n + Caddy (HTTPS automatique) pour un VPS.
+# Numera Agentic — n8n + Caddy (HTTPS automatique) pour un VPS.
 # Usage : cp .env.example .env && docker compose up -d
 services:
   n8n:

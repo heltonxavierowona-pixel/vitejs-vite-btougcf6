@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0002 : SaaS ouvert à tous
+-- Numera Agentic — 0002 : SaaS ouvert à tous
 --   * chaque inscription crée automatiquement son organisation
 --   * produits : l'agent s'adapte au produit et en déduit les canaux
 --   * connexions : chaque utilisateur branche SES comptes Meta

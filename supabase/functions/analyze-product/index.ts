@@ -14,7 +14,7 @@ const ROLE: Record<Channel, { role: string; mode: string }> = {
   whatsapp: { role: 'closing', mode: 'auto' },
 }
 
-const SYSTEM_PROMPT = `Tu es le stratège commercial de « Le Closer », une plateforme de prospection.
+const SYSTEM_PROMPT = `Tu es le stratège commercial de « Numera Agentic », une plateforme de prospection.
 À partir de la description d'un produit, tu détermines QUI prospecter, SUR QUELS RÉSEAUX et COMMENT.
 
 Règles des canaux (non négociables, elles viennent des plateformes) :

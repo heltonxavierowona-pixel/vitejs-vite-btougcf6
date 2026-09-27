@@ -30,7 +30,7 @@ Chaque alerte contient un **lien direct** vers la conversation (`/conversations?
 
 ### Telegram : un bot pour toute la plateforme, un chat par client
 1. Paramètres → Alertes → **Connecter Telegram** : la plateforme génère un code à usage unique et ouvre `t.me/<bot>?start=<code>`.
-2. L'utilisateur appuie sur **Démarrer** : le bot (n8n 06) reçoit `/start <code>`, relie ce chat à son organisation et confirme « ✅ Alertes Le Closer activées ».
+2. L'utilisateur appuie sur **Démarrer** : le bot (n8n 06) reçoit `/start <code>`, relie ce chat à son organisation et confirme « ✅ Alertes Numera Agentic activées ».
 3. **Sécurité** : l'identifiant du chat n'est écrit que par le serveur. Un utilisateur peut se déconnecter, mais ne peut pas rediriger les alertes vers un autre chat (trigger `protect_org_columns`, testé).
 
 ### E-mail
@@ -90,9 +90,9 @@ Corrigé dans `0008` avec une règle de modification réservée aux membres, et 
 
 ## 7.5 Mise en service
 
-1. **Bot Telegram** : `@BotFather` → `/newbot` → nom d'utilisateur (ex. `LeCloserAlertesBot`) → token dans le credential Telegram de n8n ; `VITE_TELEGRAM_BOT` = nom du bot (sans @).
+1. **Bot Telegram** : `@BotFather` → `/newbot` → nom d'utilisateur (ex. `LeNumeraAlertesBot`) → token dans le credential Telegram de n8n ; `VITE_TELEGRAM_BOT` = nom du bot (sans @).
 2. **SMTP** dans n8n (ex. Brevo) + `ALERT_FROM_EMAIL` et `APP_URL` dans `infra/.env`.
-3. **Database Webhook** Supabase : table `alerts`, INSERT → `https://n8n.tondomaine.com/webhook/closer/alerts` (en-tête `x-closer-secret`).
+3. **Database Webhook** Supabase : table `alerts`, INSERT → `https://n8n.tondomaine.com/webhook/numera/alerts` (en-tête `x-numera-secret`).
 4. Activer les workflows 05 et 06.
 
 ---

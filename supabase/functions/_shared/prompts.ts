@@ -485,5 +485,5 @@ export const DEFAULT_FOLLOWUP_TEMPLATES: { purpose: 'followup_1' | 'followup_2';
 ]
 
 export function templateName(purpose: string, language: string): string {
-  return `closer_${purpose.replace('followup_', 'relance_')}_${language}`
+  return `numera_${purpose.replace('followup_', 'relance_')}_${language}`
 }

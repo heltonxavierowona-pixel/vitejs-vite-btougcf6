@@ -50,7 +50,7 @@ export default function ChannelsPage() {
         <h1>Canaux</h1>
         <p className="lead">
           Connectez vos propres comptes. Vos clients continuent d'utiliser WhatsApp, Messenger et Instagram ;
-          vous leur répondez depuis Le Closer.
+          vous leur répondez depuis Numera Agentic.
         </p>
       </header>
 
@@ -104,7 +104,7 @@ export default function ChannelsPage() {
               )}
               {c.mode === 'assisted' && (
                 <p className="muted small">
-                  Pas de connexion : l'IA prépare les messages dans Le Closer, vous les envoyez depuis votre compte.
+                  Pas de connexion : l'IA prépare les messages dans Numera Agentic, vous les envoyez depuis votre compte.
                 </p>
               )}
             </section>

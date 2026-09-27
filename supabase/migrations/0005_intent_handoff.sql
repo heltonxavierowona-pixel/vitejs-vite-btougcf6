@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0005 : détection d'intérêt & bascule WhatsApp (Partie 4)
+-- Numera Agentic — 0005 : détection d'intérêt & bascule WhatsApp (Partie 4)
 --   * classification de chaque réponse de prospect (intention + confiance)
 --   * machine à états : intérêt explicite → proposition WhatsApp ;
 --     neutre / négatif / pas maintenant → archivé sans relance ; stop → ne plus contacter

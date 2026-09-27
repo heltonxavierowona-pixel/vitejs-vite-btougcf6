@@ -7,7 +7,7 @@ import { chatJSON, MODELS } from '../_shared/llm.ts'
 const MODEL = MODELS.fast
 const MAX_ITEMS = 20
 
-const SYSTEM_PROMPT = `Tu qualifies des prospects pour le produit d'un utilisateur de « Le Closer ».
+const SYSTEM_PROMPT = `Tu qualifies des prospects pour le produit d'un utilisateur de « Numera Agentic ».
 Tu reçois : la fiche du produit, ses segments de cible, et une liste de profils copiés par l'utilisateur.
 
 Pour CHAQUE profil, dans le même ordre, renvoie :

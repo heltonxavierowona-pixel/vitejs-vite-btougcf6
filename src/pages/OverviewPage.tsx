@@ -35,7 +35,7 @@ export default function OverviewPage() {
   return (
     <>
       <header className="page-head">
-        <p className="eyebrow">Le Closer</p>
+        <p className="eyebrow">Numera Agentic</p>
         <h1>Vue d'ensemble</h1>
         <p className="lead">
           Les réseaux sociaux ouvrent la conversation, WhatsApp la conclut, et tout se pilote depuis ici.

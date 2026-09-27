@@ -1,6 +1,6 @@
 // POST { code, waba_id, phone_number_id, coexistence? }
 // Appelée par la plateforme à la fin de l'« Embedded Signup » WhatsApp :
-// l'utilisateur a connecté SON numéro WhatsApp Business à Le Closer.
+// l'utilisateur a connecté SON numéro WhatsApp Business à Numera Agentic.
 import { graph, GRAPH, handler, HttpError, json, requireUser, rest } from '../_shared/supabase.ts'
 
 interface Body {
@@ -35,7 +35,7 @@ Deno.serve(handler(async (req) => {
     `channel_accounts?channel=eq.whatsapp&external_id=eq.${body.phone_number_id}&select=organization_id`,
   )
   if (existing.length && existing[0].organization_id !== orgId) {
-    throw new HttpError(409, 'Ce numéro est déjà connecté à un autre compte Le Closer')
+    throw new HttpError(409, 'Ce numéro est déjà connecté à un autre compte Numera Agentic')
   }
 
   // 3. Abonner notre app aux webhooks du compte WhatsApp du client.

@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — schéma initial multi-tenant (Partie 1)
+-- Numera Agentic — schéma initial multi-tenant (Partie 1)
 -- À exécuter dans l'éditeur SQL Supabase.
 -- Règle : toute table métier porte organization_id + RLS.
 -- n8n utilise la clé service_role (contourne RLS) ; le front utilise
@@ -305,7 +305,7 @@ revoke execute on function ingest_inbound_message from public, anon, authenticat
 -- remplacez l'e-mail puis exécutez ce bloc une fois :
 --
 -- with org as (
---   insert into organizations (name) values ('Le Closer — interne') returning id
+--   insert into organizations (name) values ('Numera Agentic — interne') returning id
 -- )
 -- insert into organization_members (organization_id, user_id, role)
 -- select org.id, u.id, 'owner' from org, auth.users u

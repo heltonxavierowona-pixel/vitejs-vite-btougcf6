@@ -1,5 +1,5 @@
 -- =====================================================================
--- Le Closer — 0007 : closing & relances (Partie 6)
+-- Numera Agentic — 0007 : closing & relances (Partie 6)
 --   Closing : prospect prêt → présentation / lien, PUIS demande d'appel.
 --   Relances : intéressé mais silencieux → 2 relances espacées, puis abandon.
 --   WhatsApp hors fenêtre 24 h → modèles approuvés par Meta.
@@ -37,7 +37,7 @@ create table whatsapp_templates (
   organization_id    uuid not null references organizations(id) on delete cascade,
   channel_account_id uuid not null references channel_accounts(id) on delete cascade,
   purpose            text not null check (purpose in ('followup_1', 'followup_2')),
-  name               text not null,          -- ex. closer_relance_1_fr
+  name               text not null,          -- ex. numera_relance_1_fr
   language           text not null,          -- fr, en
   category           text not null default 'MARKETING',
   body               text not null,          -- avec {{1}} = prénom, {{2}} = produit
