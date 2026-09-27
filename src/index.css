@@ -4,15 +4,17 @@
   --text: #16181d;
   --muted: #5d6470;
   --border: #e3e6eb;
-  --brand: #155c88;        /* Bleu NUMERA (boutons : 7,2:1 avec le blanc) */
-  --brand-soft: #e6f0f7;
-  --brand-green: #1f7f55;  /* Vert NUMERA pour du texte (4,97:1) */
-  /* Couleurs du logo */
-  --nm-navy: #134b70;
-  --nm-bar: #155c88;
-  --nm-green: #32bf7a;
-  --nm-word: #134b70;
-  --nm-tagline: #4f5b66;
+  --brand: #0A3B66;        /* Bleu marine NUMERA (boutons : 11,5:1 avec le blanc) */
+  --brand-soft: #e7eef5;
+  --brand-green: #00875A;  /* Vert NUMERA pour du texte (4,55:1) */
+  /* Couleurs du logo officiel (brand/numera-logo-original.svg) */
+  --nm-navy: #0A3B66;
+  --nm-navy-deep: #051E36;
+  --nm-green-from: #00875A;
+  --nm-green-to: #00E676;
+  --nm-word: #0A3B66;
+  --nm-tagline: #5A6E85;
+  --nm-tagline-green: #00875A;
   --ok: #1e8e5a;
   --ok-soft: #e3f5ec;
   --warn: #9a5b00;
@@ -31,14 +33,16 @@
     --text: #e8eaee;
     --muted: #9aa1ad;
     --border: #272b34;
-    --brand: #5aa0d6;
-    --brand-soft: #14283a;
-    --brand-green: #32bf7a;
-    --nm-navy: #5aa0d6;
-    --nm-bar: #7fb6e3;
-    --nm-green: #32bf7a;
+    --brand: #7fb3e0;
+    --brand-soft: #132a40;
+    --brand-green: #00E676;
+    --nm-navy: #7fb3e0;
+    --nm-navy-deep: #5a95c8;
+    --nm-green-from: #00b377;
+    --nm-green-to: #00E676;
     --nm-word: #e8f1f8;
-    --nm-tagline: #a9b4be;
+    --nm-tagline: #a9b8c7;
+    --nm-tagline-green: #00E676;
     --ok: #4cc38a;
     --ok-soft: #13291f;
     --warn: #f0b04a;

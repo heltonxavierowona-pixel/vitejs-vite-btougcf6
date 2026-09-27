@@ -24,7 +24,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <form className="card form login-card" onSubmit={submit}>
-        <div className="brand"><Logo size={44} /></div>
+        <div className="brand"><Logo size={48} tagline="RÉSEAUX SOCIAUX • WHATSAPP • CLOSING" /></div>
         <p className="muted">L'agent IA qui prospecte sur les réseaux et conclut sur WhatsApp.</p>
         {sent ? (
           <p className="success">Lien de connexion envoyé à {email}. Ouvrez votre boîte mail.</p>

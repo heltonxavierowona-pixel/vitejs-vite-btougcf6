@@ -1,41 +1,35 @@
-// Symbole NUMERA (reproduction vectorielle du logo de la marque), repère 108 × 84.
-// Source unique : utilisée par le composant <Logo /> et par scripts/build-favicon.mjs (public/numera-mark.svg).
-// Trois barres, une courbe qui monte en flèche (bleu → vert) et un cadre en forme de maison.
+// Symbole NUMERA : tracés repris à l'identique du logo officiel (brand/numera-logo-original.svg,
+// groupe « Logo-Mark »). Repère d'origine du groupe ; viewBox recadré sur le symbole.
+// Source unique : composant <Logo /> et scripts/build-favicon.mjs (public/numera-mark.svg).
 
-export interface MarkColors { navy: string; bar: string; green: string }
+export interface MarkColors {
+  navy: string        // socle + haut du dégradé des barres
+  navyDeep: string    // bas du dégradé des barres
+  greenFrom: string   // dégradé de la flèche et de la barre verte
+  greenTo: string
+}
 
-export const NUMERA_COLORS: MarkColors = { navy: '#134b70', bar: '#155c88', green: '#32bf7a' }
+export const NUMERA_COLORS: MarkColors = { navy: '#0A3B66', navyDeep: '#051E36', greenFrom: '#00875A', greenTo: '#00E676' }
+
+export const MARK_VIEWBOX = '2 20 240 212'
 
 export function numeraMarkSvg(c: MarkColors, idPrefix = 'nm'): string {
-  const U = [[-3, 88], [46, 52.5], [61, 67], [97, 31]]   // bande haute : dégradé bleu → vert, finit en flèche
-  const N = [[-3, 95], [46, 59], [58, 71], [86, 49]]     // bande basse : toit de la maison (bleu marine)
-  const gap = 9                                           // espace blanc entre les barres et la bande haute
-  const pts = (a: number[][]) => a.map((p) => p.join(',')).join(' ')
-  const cut = U.map(([x, y]) => `${x},${y - gap}`).join(' ')
-  const d = Math.SQRT1_2
-  const [ex, ey] = U[3]
-  const tip = [ex + 14 * d, ey - 14 * d], b1 = [ex + 10.5 * d, ey + 10.5 * d], b2 = [ex - 10.5 * d, ey - 10.5 * d]
+  const green = `${idPrefix}-green`
+  const blue = `${idPrefix}-blue`
   return `
   <defs>
-    <linearGradient id="${idPrefix}-band" gradientUnits="userSpaceOnUse" x1="0" y1="84" x2="100" y2="24">
-      <stop offset="0" stop-color="${c.navy}"/><stop offset="0.45" stop-color="${c.navy}"/><stop offset="0.8" stop-color="${c.green}"/>
+    <linearGradient id="${green}" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="${c.greenFrom}"/><stop offset="100%" stop-color="${c.greenTo}"/>
     </linearGradient>
-    <clipPath id="${idPrefix}-box"><rect width="108" height="84"/></clipPath>
-    <mask id="${idPrefix}-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="108" height="84">
-      <rect width="108" height="84" fill="#fff"/>
-      <polygon points="${cut} 108,${U[3][1] - gap - 20} 108,84 0,84" fill="#000"/>
-    </mask>
+    <linearGradient id="${blue}" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="${c.navy}"/><stop offset="100%" stop-color="${c.navyDeep}"/>
+    </linearGradient>
   </defs>
-  <g mask="url(#${idPrefix}-cut)">
-    <rect x="22" y="36" width="13" height="48" fill="${c.bar}"/>
-    <rect x="46" y="23" width="13.5" height="61" fill="${c.bar}"/>
-    <rect x="65" y="11" width="13.5" height="73" fill="${c.green}"/>
-  </g>
-  <g clip-path="url(#${idPrefix}-box)">
-    <rect x="15" y="79" width="77" height="5" fill="${c.navy}"/>
-    <rect x="85" y="51" width="7" height="33" fill="${c.navy}"/>
-    <polyline points="${pts(N)}" fill="none" stroke="${c.navy}" stroke-width="7" stroke-linejoin="miter"/>
-    <polyline points="${pts(U)}" fill="none" stroke="url(#${idPrefix}-band)" stroke-width="7" stroke-linejoin="miter"/>
-    <polygon points="${pts([b2, b1, tip])}" fill="${c.green}"/>
-  </g>`
+  <path d="M 20,180 L 120,200 L 220,180 L 220,210 L 120,230 L 20,210 Z" fill="${c.navy}" opacity="0.15"/>
+  <path d="M 10,195 L 120,220 L 230,195" fill="none" stroke="${c.navy}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="45" y="100" width="32" height="90" rx="4" fill="url(#${blue})"/>
+  <rect x="95" y="60" width="32" height="130" rx="4" fill="url(#${blue})"/>
+  <rect x="145" y="30" width="32" height="160" rx="4" fill="url(#${green})"/>
+  <path d="M 20,150 L 80,170 L 130,110 L 225,35" fill="none" stroke="url(#${green})" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 180,30 L 230,30 L 230,80" fill="none" stroke="url(#${green})" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>`
 }

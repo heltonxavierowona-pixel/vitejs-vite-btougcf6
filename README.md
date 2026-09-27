@@ -1,6 +1,6 @@
 # NUMERA AGENTIC
 
-> Premier produit de la gamme **NUMERA**. Logo : reproduction vectorielle du logo NUMERA — géométrie unique dans `src/lib/numeraMark.ts`, utilisée par `src/components/Logo.tsx` (symbole + nom du produit) et par `node scripts/build-favicon.mjs` qui régénère `public/numera-mark.svg`. Couleurs du logo : bleu marine `#134b70` / `#155c88` et vert `#32bf7a` ; police du nom : Montserrat.
+> Premier produit de la gamme **NUMERA**. Logo officiel : `brand/numera-logo-original.svg`. Le symbole (tracés identiques) est dans `src/lib/numeraMark.ts`, utilisé par `src/components/Logo.tsx` ; `node scripts/build-favicon.mjs` régénère le favicon (`public/numera-mark.svg`) et le logo du produit (`brand/numera-agentic-logo.svg`). Couleurs : bleu marine `#0A3B66` / `#051E36`, vert `#00875A` → `#00E676`, gris `#5A6E85`. Polices : Plus Jakarta Sans (nom), Inter (slogans).
 
 Plateforme SaaS de prospection IA. Chaque utilisateur décrit son produit : l'agent en déduit les cibles et les réseaux adaptés (LinkedIn, X, Facebook, Instagram), puis la conversation se conclut sur WhatsApp. L'utilisateur connecte ses propres comptes et répond à ses clients depuis la plateforme, pendant que ses clients restent sur WhatsApp, Messenger ou Instagram.
 

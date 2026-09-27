@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="100%" height="100%">
+  <defs>
+    <!-- Dégradé Vert pour la flèche de croissance -->
+    <linearGradient id="greenArrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00875A"/>
+      <stop offset="100%" stop-color="#00E676"/>
+    </linearGradient>
+
+    <!-- Dégradé Bleu pour l'histogramme -->
+    <linearGradient id="blueBarGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0A3B66"/>
+      <stop offset="100%" stop-color="#051E36"/>
+    </linearGradient>
+  </defs>
+
+  <g id="Logo-Mark" transform="translate(40, 40)">
+    <!-- Socle / Structure pliée de la facture -->
+    <path d="M 20,180 L 120,200 L 220,180 L 220,210 L 120,230 L 20,210 Z" fill="#0A3B66" opacity="0.15"/>
+    <path d="M 10,195 L 120,220 L 230,195" fill="none" stroke="#0A3B66" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Graphique à barres (Blue Bars) -->
+    <!-- Barre 1 (Gauche) -->
+    <rect x="45" y="100" width="32" height="90" rx="4" fill="url(#blueBarGrad)"/>
+    <!-- Barre 2 (Milieu) -->
+    <rect x="95" y="60" width="32" height="130" rx="4" fill="url(#blueBarGrad)"/>
+    <!-- Barre 3 (Droite) -->
+    <rect x="145" y="30" width="32" height="160" rx="4" fill="url(#greenArrowGrad)"/>
+
+    <!-- Flèche de croissance (Green Dynamic Arrow) -->
+    <path d="M 20,150 L 80,170 L 130,110 L 225,35" fill="none" stroke="url(#greenArrowGrad)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Tête de la flèche -->
+    <path d="M 180,30 L 230,30 L 230,80" fill="none" stroke="url(#greenArrowGrad)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Typographie & Nom de marque -->
+  <g id="Logo-Text" transform="translate(320, 140)">
+    <!-- Marque Principal: Numera -->
+    <text x="0" y="0" font-family="'Plus Jakarta Sans', 'Inter', 'Segoe UI', sans-serif" font-weight="800" font-size="92" fill="#0A3B66" letter-spacing="-1.5">Numera</text>
+
+    <!-- Slogan / Accroche -->
+    <text x="5" y="42" font-family="'Inter', 'Segoe UI', sans-serif" font-weight="700" font-size="18" fill="#5A6E85" letter-spacing="3.5">SOLUTIONS COMPTABLES &amp; TVA</text>
+    <text x="5" y="70" font-family="'Inter', 'Segoe UI', sans-serif" font-weight="600" font-size="14" fill="#00A86B" letter-spacing="2.5">FACTURES • COMPTABILITÉ • CONFORMITÉ</text>
+  </g>
+</svg>

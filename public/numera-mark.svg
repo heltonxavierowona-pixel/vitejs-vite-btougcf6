@@ -1,25 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -22 128 128" role="img" aria-label="Numera">
-  <rect x="-10" y="-22" width="128" height="128" rx="26" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -6 272 272" role="img" aria-label="Numera">
+  <rect x="-14" y="-6" width="272" height="272" rx="56" fill="#ffffff"/>
   <defs>
-    <linearGradient id="fav-band" gradientUnits="userSpaceOnUse" x1="0" y1="84" x2="100" y2="24">
-      <stop offset="0" stop-color="#134b70"/><stop offset="0.45" stop-color="#134b70"/><stop offset="0.8" stop-color="#32bf7a"/>
+    <linearGradient id="fav-green" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00875A"/><stop offset="100%" stop-color="#00E676"/>
     </linearGradient>
-    <clipPath id="fav-box"><rect width="108" height="84"/></clipPath>
-    <mask id="fav-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="108" height="84">
-      <rect width="108" height="84" fill="#fff"/>
-      <polygon points="-3,79 46,43.5 61,58 97,22 108,2 108,84 0,84" fill="#000"/>
-    </mask>
+    <linearGradient id="fav-blue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0A3B66"/><stop offset="100%" stop-color="#051E36"/>
+    </linearGradient>
   </defs>
-  <g mask="url(#fav-cut)">
-    <rect x="22" y="36" width="13" height="48" fill="#155c88"/>
-    <rect x="46" y="23" width="13.5" height="61" fill="#155c88"/>
-    <rect x="65" y="11" width="13.5" height="73" fill="#32bf7a"/>
-  </g>
-  <g clip-path="url(#fav-box)">
-    <rect x="15" y="79" width="77" height="5" fill="#134b70"/>
-    <rect x="85" y="51" width="7" height="33" fill="#134b70"/>
-    <polyline points="-3,95 46,59 58,71 86,49" fill="none" stroke="#134b70" stroke-width="7" stroke-linejoin="miter"/>
-    <polyline points="-3,88 46,52.5 61,67 97,31" fill="none" stroke="url(#fav-band)" stroke-width="7" stroke-linejoin="miter"/>
-    <polygon points="89.57537879754125,23.57537879754125 104.42462120245875,38.42462120245875 106.89949493661166,21.100505063388333" fill="#32bf7a"/>
-  </g>
+  <path d="M 20,180 L 120,200 L 220,180 L 220,210 L 120,230 L 20,210 Z" fill="#0A3B66" opacity="0.15"/>
+  <path d="M 10,195 L 120,220 L 230,195" fill="none" stroke="#0A3B66" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="45" y="100" width="32" height="90" rx="4" fill="url(#fav-blue)"/>
+  <rect x="95" y="60" width="32" height="130" rx="4" fill="url(#fav-blue)"/>
+  <rect x="145" y="30" width="32" height="160" rx="4" fill="url(#fav-green)"/>
+  <path d="M 20,150 L 80,170 L 130,110 L 225,35" fill="none" stroke="url(#fav-green)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 180,30 L 230,30 L 230,80" fill="none" stroke="url(#fav-green)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

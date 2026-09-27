@@ -1,16 +1,20 @@
 import { useId } from 'react'
-import { numeraMarkSvg } from '../lib/numeraMark'
+import { MARK_VIEWBOX, numeraMarkSvg } from '../lib/numeraMark'
 
-// Couleurs du logo via variables CSS (--nm-*) : variante lisible en mode sombre.
-const CSS_COLORS = { navy: 'var(--nm-navy)', bar: 'var(--nm-bar)', green: 'var(--nm-green)' }
+// Couleurs via variables CSS (--nm-*) : identiques au logo officiel en mode clair,
+// éclaircies en mode sombre pour rester lisibles.
+const CSS_COLORS = {
+  navy: 'var(--nm-navy)', navyDeep: 'var(--nm-navy-deep)',
+  greenFrom: 'var(--nm-green-from)', greenTo: 'var(--nm-green-to)',
+}
 
 export function NumeraMark({ size = 34 }: { size?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   return (
     <svg
-      width={(size * 108) / 84}
+      width={(size * 240) / 212}
       height={size}
-      viewBox="0 0 108 84"
+      viewBox={MARK_VIEWBOX}
       aria-hidden="true"
       className="numera-mark"
       // Contenu statique généré par le code (aucune donnée utilisateur).
@@ -19,13 +23,15 @@ export function NumeraMark({ size = 34 }: { size?: number }) {
   )
 }
 
-export default function Logo({ product = 'AGENTIC', size = 34 }: { product?: string; size?: number }) {
+// Symbole + « Numera » + nom du produit ; `tagline` (ligne verte) pour les grands formats.
+export default function Logo({ product = 'AGENTIC', tagline, size = 34 }: { product?: string; tagline?: string; size?: number }) {
   return (
     <span className="logo" aria-label={`Numera ${product}`}>
       <NumeraMark size={size} />
       <span className="logo-text">
-        <span className="logo-brand">Nume<span className="logo-r">r</span>a</span>
+        <span className="logo-brand">Numera</span>
         <span className="logo-product">{product}</span>
+        {tagline && <span className="logo-tagline">{tagline}</span>}
       </span>
     </span>
   )
