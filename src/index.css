@@ -37,3 +37,7 @@
 body { margin: 0; background: var(--bg); }
 a { color: var(--brand); }
 h1, h2, h3 { line-height: 1.2; margin: 0; }
+
+@media (prefers-color-scheme: dark) {
+  .error { background: #3a1616 !important; color: #ff9b9b !important; }
+}

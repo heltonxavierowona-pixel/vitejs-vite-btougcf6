@@ -1,182 +1,106 @@
-# Partie 1 — Fondations & comptes
+# Partie 1 — Fondations SaaS
 
-Objectif : à la fin de cette partie, **les 5 canaux sont créés et reliés**, l'infrastructure tourne, la base SaaS existe, et un message envoyé à votre Page Facebook, à votre Instagram ou à votre numéro WhatsApp **arrive dans la base Supabase**.
-
-Durée réaliste : 2 à 4 jours (les délais de validation Meta sont le facteur limitant).
+Objectif : **n'importe quel utilisateur** peut s'inscrire, décrire son produit et obtenir les réseaux adaptés, connecter son WhatsApp/Facebook/Instagram, puis répondre à ses clients depuis la plateforme.
 
 ---
 
-## 1.1 Architecture de la Partie 1
+## 1.1 Parcours utilisateur livré
 
-```
-Prospect ──► Page FB / IG Pro / numéro WhatsApp
-                     │ webhook (HTTPS obligatoire)
-                     ▼
-        n8n : workflow « 01 · Meta inbound »
-          ├─ GET  → vérification du webhook (hub.challenge)
-          └─ POST → vérification signature → normalisation
-                      → Supabase: raw_events + messages
-                     ▼
-        Plateforme web : page « Canaux » (statut) + « Prospects »
-```
+| Étape | Écran | Ce qui se passe |
+|---|---|---|
+| Inscription | Connexion (lien magique par e-mail) | La base crée automatiquement **son organisation** (trigger `handle_new_user`) |
+| 1. Produit | **Produits** | Il décrit son offre → **analyse** : réseaux classés par score avec les raisons, cibles, ton, langues, accroches |
+| 2. Comptes | **Canaux** | « Garder mon numéro WhatsApp Business » (coexistence) ou « Nouveau numéro » ; « Connecter Facebook et Instagram » |
+| 3. Conversations | **Conversations** | Messages des clients en temps réel ; il répond ; la réponse part sur WhatsApp/Messenger/Instagram |
 
-Fichiers livrés dans ce dépôt :
+Sans configuration (`.env` vide), la plateforme tourne en **mode démo** avec des données d'exemple : tout est cliquable.
 
-| Fichier | Rôle |
+---
+
+## 1.2 Le conseiller de canaux (produit → réseaux)
+
+Deux niveaux :
+
+1. **Analyse IA** (`supabase/functions/analyze-product`) : l'IA reçoit la fiche produit et renvoie un JSON (cibles, 5 canaux notés 0–100 avec raisons et approche, ton, langues, accroches, risques).
+2. **Garde-fou par règles** : quel que soit l'avis de l'IA, le **rôle** (aller chercher / attirer / conclure) et le **mode** (auto / assisté) de chaque canal sont imposés par les règles des plateformes. L'IA ne pourra jamais proposer « écrire en premier sur Instagram ».
+
+Si l'IA est indisponible (ou en mode démo), une **analyse par règles** (`src/lib/channelAdvisor.ts`) prend le relais : elle tient compte du type de clients (entreprises/particuliers), de la cible (fonctions, âge), du caractère visuel du produit, du prix et des pays.
+
+Exemples obtenus en démo :
+
+| Produit | Classement |
 |---|---|
-| `supabase/migrations/0001_init.sql` | Schéma multi-tenant complet (organisations, canaux, prospects, conversations, messages, profil relationnel, validations, événements) + RLS |
-| `infra/docker-compose.yml` + `infra/Caddyfile` | n8n + Caddy (HTTPS automatique) sur un VPS |
-| `infra/.env.example` | Variables à renseigner |
-| `n8n/workflows/01-meta-inbound.json` | Webhook unique pour Messenger + Instagram + WhatsApp |
-| `n8n/workflows/00-healthcheck.json` | Ping quotidien Supabase + alerte Telegram si panne |
-| `src/` | Plateforme React : page **Canaux** avec la checklist de cette partie |
+| Logiciel RH pour PME (Cameroun, CI, Sénégal) | LinkedIn 70 · Facebook 65 · X 30 · Instagram 10 |
+| Formation Excel pour étudiants (Cameroun, Gabon) | Facebook 65 · Instagram 50 · X 5 · LinkedIn 0 |
+
+### Prompt « Analyse produit »
+
+Le prompt système complet est dans `supabase/functions/analyze-product/index.ts`. Ses points clés :
+- il rappelle les règles non négociables de chaque canal ;
+- il impose une méthode (acheteur réel → usage des réseaux dans les pays visés → score justifié → segments → ton et accroches → risques) ;
+- il exige un JSON strict, et le code valide et borne chaque champ avant de l'enregistrer.
+
+Modèle par défaut : `anthropic/claude-haiku-4.5` via OpenRouter (rapide, peu coûteux), modifiable avec `OPENROUTER_MODEL`.
 
 ---
 
-## 1.2 Comptes à créer — dans cet ordre
+## 1.3 Ce que TU dois configurer (propriétaire de la plateforme)
 
-### A. Identité « business » (prérequis à tout le reste)
+Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, eux, n'ont qu'à cliquer sur « Connecter ».
 
-1. **Adresse e-mail dédiée** (ex. `closer@votredomaine.com`) — utilisée pour tous les comptes ci-dessous.
-2. **Nom de domaine** — nécessaire pour l'HTTPS de n8n, la vérification Meta et la crédibilité.
-3. **Numéro de téléphone dédié pour WhatsApp API** — voir §D, choix important.
+### A. Meta (une app pour tous les utilisateurs)
+1. **Portefeuille Meta Business** de ta société + **vérification d'entreprise**.
+2. **App Meta** de type *Business*, produits : **WhatsApp**, **Messenger**, **Instagram**, **Facebook Login for Business**.
+3. **Devenir Tech Provider** (App → WhatsApp → démarrage rapide → « Devenir fournisseur technologique »).
+4. **Configurations Facebook Login for Business** (App → Facebook Login for Business → Configurations) :
+   - une pour **WhatsApp Embedded Signup** (variation « WhatsApp Embedded Signup », token utilisateur système) → `VITE_META_WA_CONFIG_ID` ;
+   - une pour **Pages + Instagram** (permissions `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `instagram_basic`, `instagram_manage_messages`) → `VITE_META_LOGIN_CONFIG_ID`.
+5. **Domaines autorisés** : ajoute le domaine de la plateforme dans les réglages de l'app (obligatoire pour le SDK JavaScript).
+6. **Webhooks** : URL `https://n8n.tondomaine.com/webhook/meta`, jeton = `META_VERIFY_TOKEN`. Abonnements : WhatsApp `messages` ; Page `messages`, `messaging_postbacks`, `feed` ; Instagram `messages`, `comments`.
+7. Lancer dès maintenant la **vérification d'entreprise** et l'**App Review** (voir `00-architecture-saas.md` §6).
 
-### B. LinkedIn (mode assisté)
+### B. Supabase
+1. Créer le projet, exécuter `0001_init.sql` puis `0002_saas_products_inbox.sql`.
+2. Auth → activer l'e-mail (lien magique) et définir l'URL du site.
+3. Déployer les fonctions :
+   ```bash
+   supabase functions deploy analyze-product whatsapp-connect meta-connect
+   supabase secrets set --env-file supabase/functions/.env
+   ```
+4. **Database Webhook** (Database → Webhooks) : table `messages`, événement `INSERT`, URL `https://n8n.tondomaine.com/webhook/closer/outbound`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>`.
 
-1. Créer le compte dédié avec **une vraie identité** (vous, ou votre marque personnelle pro). Les faux profils sont interdits par LinkedIn et vite restreints.
-2. **Chauffe du compte — 3 à 4 semaines** avant toute prospection :
-   - Semaine 1 : profil complet (photo, bannière, titre orienté bénéfice client, section « Infos »), 5–10 invitations/jour vers des personnes que vous connaissez.
-   - Semaines 2–3 : 10–15 invitations/jour, 2 publications/semaine, commentaires quotidiens.
-   - Semaine 4+ : jusqu'à 20 invitations/jour, **~100/semaine maximum**.
-3. Créer une **Page LinkedIn** pour Core HR (crédibilité).
-4. **Aucune extension d'automatisation** sur ce compte.
+### C. n8n (VPS ≈ 5 €/mois)
+1. `infra/docker-compose.yml` + `infra/.env` (voir `infra/.env.example`).
+2. Importer `n8n/workflows/*.json`, sélectionner les credentials (Supabase service_role, OpenRouter, Telegram).
+3. Activer les 3 workflows.
 
-### C. X (mode assisté)
-
-1. Compte dédié, bio claire, lien vers votre site.
-2. Chauffe identique : publier/répondre pendant 2–3 semaines.
-3. Ne pas demander d'accès API maintenant (payant, inutile en mode assisté).
-
-### D. Meta : Facebook, Instagram, WhatsApp (mode automatique)
-
-Tout se passe dans **un seul portefeuille Meta Business**.
-
-1. **Meta Business Suite / Business Manager** : `business.facebook.com` → créer le portefeuille « Le Closer » (ou le nom de votre société).
-2. **Page Facebook** : créer la Page (catégorie Logiciel / Service B2B). La rattacher au portefeuille.
-3. **Instagram** : créer le compte, le passer en **Compte professionnel** (Paramètres → Type de compte → Professionnel → Entreprise), puis le **lier à la Page Facebook**.
-4. **Vérification d'entreprise** (Business Settings → Centre de sécurité) : documents officiels (RCCM, NIU…). Non bloquante pour démarrer en interne, **obligatoire avant de vendre le SaaS** et pour lever les limites WhatsApp.
-5. **App Meta développeur** : `developers.facebook.com` → Créer une app → type **Business** → rattacher au portefeuille. Ajouter les produits :
-   - **Messenger** (webhooks de la Page)
-   - **Instagram** → « API Instagram avec connexion Facebook » (webhooks `messages`, `comments`)
-   - **WhatsApp** → Cloud API
-6. **Utilisateur système** (Business Settings → Utilisateurs système) : créer un utilisateur système **Admin**, lui assigner l'app, la Page, le compte IG et le compte WhatsApp, puis générer un **token permanent** avec :
-   `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments`, `whatsapp_business_messaging`, `whatsapp_business_management`, `business_management`.
-   → Ce token va **uniquement** dans les credentials n8n.
-
-#### Le numéro WhatsApp : 2 options
-
-| Option | Principe | Pour | Contre |
-|---|---|---|---|
-| **1. Nouveau numéro** (recommandé) | Une nouvelle SIM (MTN/Orange) dédiée à l'API | Aucun risque pour votre WhatsApp Business actuel, séparation perso/outil | Nouveau numéro à faire connaître |
-| **2. Coexistence** | Garder votre numéro WhatsApp Business (app) **et** le connecter à la Cloud API | Même numéro, historique conservé, l'app reste utilisable | Fonction récente, disponibilité selon pays/version de l'app à vérifier ; certaines fonctions de l'app sont limitées |
-
-> ⚠️ Sans coexistence, **un numéro enregistré sur la Cloud API ne peut plus être utilisé dans l'application WhatsApp**. Ne migrez pas votre numéro actuel « à l'aveugle ».
-
-Étapes (option 1) : App Meta → WhatsApp → Configuration de l'API → « Ajouter un numéro » → nom d'affichage (doit correspondre à votre marque, validé par Meta) → code SMS → noter `PHONE_NUMBER_ID` et `WABA_ID`.
-
-Limites de départ : **250 conversations initiées par l'entreprise / 24 h** (numéro non vérifié). Largement suffisant ; la limite monte avec la qualité et la vérification d'entreprise.
-
-### E. Infrastructure
-
-1. **VPS** (Hetzner CX22 ≈ 4–5 €/mois, Ubuntu 24.04). Pointer un sous-domaine `n8n.votredomaine.com` vers son IP (enregistrement A).
-2. **Supabase** : créer un projet (région Europe — la plus proche du Cameroun en latence), exécuter `supabase/migrations/0001_init.sql` dans l'éditeur SQL. Noter `SUPABASE_URL`, `anon key` (front), `service_role key` (n8n uniquement).
-3. **OpenRouter** : créer un compte, créditer 5 €, **définir une limite de dépense** sur la clé, noter la clé API.
-4. **Telegram** : parler à `@BotFather` → `/newbot` → noter le token. Envoyer un message à votre bot, puis récupérer votre `chat_id` via `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+### D. Plateforme web
+Déployer ce dépôt (Vercel / Cloudflare Pages) avec les variables de `.env.example` (clés **publiques** uniquement).
 
 ---
 
-## 1.3 Déploiement de n8n
+## 1.4 Workflows n8n
 
-Sur le VPS :
-
-```bash
-# 1. Docker
-curl -fsSL https://get.docker.com | sh
-
-# 2. Récupérer les fichiers infra/ de ce dépôt
-mkdir -p ~/closer && cd ~/closer
-# copier docker-compose.yml, Caddyfile, .env.example ici
-cp .env.example .env && nano .env      # renseigner les valeurs
-
-# 3. Lancer
-docker compose up -d
-# → https://n8n.votredomaine.com (HTTPS automatique via Caddy)
-```
-
-Sécurité minimale :
-- Pare-feu : n'ouvrir que 22, 80, 443 (`ufw allow 22,80,443/tcp && ufw enable`).
-- Créer le compte propriétaire n8n **immédiatement** après le premier lancement.
-- `N8N_ENCRYPTION_KEY` : générer une fois (`openssl rand -hex 32`) et **la sauvegarder** — sans elle, les credentials sont perdus.
-- Sauvegarde : export hebdomadaire des workflows (ils sont aussi versionnés dans `n8n/workflows/` de ce dépôt).
+| Workflow | Déclencheur | Rôle |
+|---|---|---|
+| `00 · Health-check` | Tous les jours à 8 h | Vérifie Supabase et OpenRouter, alerte Telegram si panne |
+| `01 · Meta inbound` | Webhook Meta | Vérifie la signature, stocke l'événement brut, retrouve **à quel utilisateur** appartient le compte (par identifiant de numéro/Page/Instagram), crée le contact et la conversation, enregistre le message |
+| `02 · Envoi sortant` | Database Webhook Supabase | Quand l'utilisateur répond depuis la plateforme : récupère le token **de son compte**, vérifie la fenêtre de 24 h, envoie via l'API Meta, met à jour le statut (envoyé / échec) |
 
 ---
 
-## 1.4 Workflows n8n de la Partie 1
+## 1.5 Base de données (ajouts de la Partie 1)
 
-### Workflow 00 · Health-check (quotidien)
+| Élément | Rôle |
+|---|---|
+| `handle_new_user` | Crée l'organisation de chaque nouvel inscrit |
+| `products` | Fiches produits + analyse (`analysis`) |
+| `channel_accounts` (+ colonnes) | Comptes connectés par chaque utilisateur (numéro affiché, WABA, coexistence) |
+| `channel_credentials` | Tokens Meta de chaque client — **inaccessible depuis le navigateur** |
+| `send_from_inbox()` | Réponse de l'utilisateur ; refusée si la fenêtre de 24 h est fermée |
+| `outbound_payload()` / `mark_message_result()` | Utilisées par n8n pour l'envoi |
 
-`Schedule (08:00)` → `HTTP GET Supabase /rest/v1/organizations?limit=1` → `IF erreur` → `Telegram : « ⚠️ Supabase injoignable »`.
-Utilité : détecter une panne **et** empêcher la mise en pause du projet Supabase gratuit.
-
-### Workflow 01 · Meta inbound (le plus important)
-
-Un seul webhook reçoit **Messenger, Instagram et WhatsApp** (Meta utilise le même format d'enveloppe, distingué par le champ `object`).
-
-```
-Webhook GET /meta ─► IF hub.verify_token == META_VERIFY_TOKEN
-                         ├─ oui → Respond: hub.challenge (texte brut, 200)
-                         └─ non → Respond: 403
-
-Webhook POST /meta ─► Respond 200 immédiatement (Meta exige < 5 s sinon il renvoie)
-                  └─► Code « Normaliser » : object = page | instagram | whatsapp_business_account
-                        → [{ channel, external_user_id, external_message_id, text, sent_at, display_name }]
-                  └─► Supabase : insert raw_events (payload brut, pour audit/rejeu)
-                  └─► Supabase : RPC ingest_inbound_message(...)
-                        (crée/retrouve prospect + conversation, insère le message, idempotent)
-```
-
-Configuration côté Meta (App → Webhooks) :
-- URL de rappel : `https://n8n.votredomaine.com/webhook/meta`
-- Jeton de vérification : la valeur de `META_VERIFY_TOKEN`
-- Abonnements : Page → `messages`, `messaging_postbacks`, `feed` ; Instagram → `messages`, `comments` ; WhatsApp → `messages`.
-- Abonner la Page à l'app : `POST /{page-id}/subscribed_apps?subscribed_fields=messages,feed`.
-
-**Signature** : Meta signe chaque POST (`X-Hub-Signature-256` = HMAC-SHA256 du corps brut avec l'App Secret). Le nœud Code du workflow la vérifie ; activez l'option « Raw Body » du Webhook. Sans cette vérification, n'importe qui peut injecter de faux messages dans votre CRM.
-
-**Idempotence** : Meta peut renvoyer plusieurs fois le même événement. La contrainte unique `(channel_account_id, external_message_id)` sur `messages` empêche les doublons.
-
-### Test de bout en bout
-
-1. Envoyer « Bonjour » à votre Page depuis un autre compte Facebook.
-2. Envoyer un DM à votre compte Instagram pro.
-3. Envoyer « Bonjour » à votre numéro WhatsApp API.
-4. Vérifier dans Supabase : 3 lignes dans `messages`, 3 prospects créés, `direction = 'inbound'`.
-
----
-
-## 1.5 Prompt LLM de la Partie 1
-
-Pas encore de « cerveau » (c'est la Partie 3). Un seul prompt de **test de connexion OpenRouter**, utilisé dans le health-check pour vérifier que la clé et le modèle répondent :
-
-```text
-SYSTEM: Tu es un service de vérification. Réponds uniquement en JSON valide.
-USER: Renvoie {"ok": true, "langues": ["fr","en"]} sans aucun autre texte.
-```
-
-Choix de modèles recommandé (à affiner en Partie 3) :
-- **Tri / classification** (intérêt, sujet sensible, langue) : modèle petit et bon marché.
-- **Rédaction** (messages, réponses WhatsApp) : modèle plus fort, appelé moins souvent.
-→ Cette séparation divise la facture LLM par 5 à 10.
+Testé sur un Postgres local : inscription → organisation créée ; message entrant → conversation + compteur non lus ; réponse → mise en file ; **un autre utilisateur ne voit rien** ; tokens invisibles ; envoi refusé après 24 h ; doublons de webhook ignorés.
 
 ---
 
@@ -184,25 +108,18 @@ Choix de modèles recommandé (à affiner en Partie 3) :
 
 | Sujet | Règle |
 |---|---|
-| **LinkedIn** | Compte neuf = fragile. Pas d'automatisation, ~100 invitations/semaine max après chauffe, taux d'acceptation à surveiller (< 30 % = message ou ciblage à revoir). |
-| **Meta — fenêtre 24 h** | Messenger/IG : vous ne pouvez répondre librement que 24 h après le dernier message du prospect. WhatsApp : hors fenêtre, seuls les **modèles approuvés** sont autorisés. La table `conversations` stocke `last_inbound_at` pour calculer cette fenêtre. |
-| **Meta — pas de message à froid** | Aucun outil conforme ne permet d'écrire en premier sur Messenger/Instagram. Tout le sourcing FB/IG sera **inbound** (Partie 2). |
-| **Meta — qualité du numéro** | Trop de blocages/signalements WhatsApp → qualité « faible » → limites réduites, voire suspension. D'où la règle : WhatsApp **uniquement après intérêt explicite et numéro donné volontairement**. |
-| **Coûts WhatsApp** | Réponses dans la fenêtre de service : gratuites. Modèles marketing (ex. relances hors 24 h) : facturés au message, tarif selon le pays du destinataire — vérifier la grille Meta pour le Cameroun et l'Afrique. |
-| **Secrets** | Token système Meta, App Secret, `service_role` Supabase, clé OpenRouter : **jamais** dans le front ni dans Git. Seulement `.env` du VPS / credentials n8n. |
-| **SaaS futur** | Les clients connecteront **leurs propres** Page/IG/WhatsApp via « Facebook Login for Business » / « Embedded Signup » WhatsApp. Le schéma `channel_accounts` est déjà prévu pour plusieurs comptes par organisation. |
+| **Bêta avant App Review** | Tant que Meta n'a pas validé l'app, seuls les comptes ajoutés comme testeurs peuvent connecter WhatsApp/Facebook. Idéal pour une bêta avec 5–10 entreprises. |
+| **Coexistence** | Vérifier la disponibilité au Cameroun. Le bouton « Nouveau numéro » sert de solution de repli. |
+| **Fenêtre de 24 h** | Au-delà, seules les relances par **modèle approuvé** sont possibles (Partie 6). La plateforme bloque déjà la réponse libre. |
+| **Tokens** | Stockés côté serveur uniquement. En production, les chiffrer avec Supabase Vault. |
+| **Coûts IA** | Chaque analyse et chaque réponse IA coûtent. À intégrer dans le prix des abonnements. |
 
 ---
 
-## ✅ Critères de validation de la Partie 1
+## ✅ Pour valider la Partie 1
 
-- [ ] Comptes LinkedIn et X créés, chauffe démarrée
-- [ ] Portefeuille Meta, Page FB, IG pro lié, app Meta créée
-- [ ] Numéro WhatsApp API actif (option 1 ou 2 choisie)
-- [ ] n8n accessible en HTTPS
-- [ ] Schéma Supabase exécuté
-- [ ] Webhook Meta vérifié (coche verte dans l'app Meta)
-- [ ] Test de bout en bout : 3 messages entrants visibles dans `messages`
-- [ ] Bot Telegram reçoit l'alerte de test
+- [ ] Le parcours utilisateur (inscription → produit → canaux → conversations) te convient
+- [ ] Le conseiller de canaux (analyse IA + règles) correspond à ton idée d'« agent qui s'adapte au produit »
+- [ ] Tu lances les démarches Meta (vérification d'entreprise, Tech Provider)
 
-**→ Validez (ou demandez des ajustements) pour passer à la Partie 2 : Ciblage & sourcing.**
+**→ Ensuite : Partie 2, Ciblage & sourcing par produit.**

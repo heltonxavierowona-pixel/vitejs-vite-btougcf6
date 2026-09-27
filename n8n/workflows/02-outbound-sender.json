@@ -1,0 +1,276 @@
+{
+  "name": "02 · Envoi sortant (plateforme → WhatsApp / Messenger / Instagram)",
+  "nodes": [
+    {
+      "id": "o1",
+      "name": "Webhook Supabase (nouveau message)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "closer-outbound",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closer/outbound",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "o2",
+      "name": "Filtrer messages en file",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages sortants mis en file depuis la plateforme.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'outbound' || r.status !== 'queued') return [];\nreturn [{ json: { message_id: r.id } }];\n"
+      }
+    },
+    {
+      "id": "o3",
+      "name": "Supabase · outbound_payload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/outbound_payload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $json.message_id }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o4",
+      "name": "Construire requête Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Construit l'appel Graph API selon le canal du message.\nconst p = $input.first().json;\nconst graph = 'https://graph.facebook.com/' + ($env.META_GRAPH_VERSION || 'v23.0');\nconst fail = (error) => [{ json: { message_id: p.message_id, url: null, error } }];\n\nif (p.status !== 'queued') return [];\nif (!p.access_token) return fail('Canal non connecté (token absent)');\nif (!p.window_open) return fail('Fenêtre de 24 h fermée : un modèle approuvé est nécessaire');\n\nlet url, payload;\nif (p.channel === 'whatsapp') {\n  url = `${graph}/${p.account_external_id}/messages`;\n  payload = { messaging_product: 'whatsapp', to: p.recipient, type: 'text', text: { body: p.body } };\n} else if (p.channel === 'facebook' || p.channel === 'instagram') {\n  // Messenger et Instagram : même endpoint, token de la Page.\n  url = `${graph}/me/messages`;\n  payload = { recipient: { id: p.recipient }, messaging_type: 'RESPONSE', message: { text: p.body } };\n} else {\n  return fail(`Le canal ${p.channel} est en mode assisté : envoi manuel uniquement`);\n}\n\nreturn [{ json: { message_id: p.message_id, url, token: p.access_token, payload } }];\n"
+      }
+    },
+    {
+      "id": "o5",
+      "name": "Envoi possible ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "o6",
+      "name": "Envoyer via Graph API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        100
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o7",
+      "name": "Marquer envoyé",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_message_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $('Construire requête Meta').item.json.message_id, p_status: 'sent', p_external_id: $json.messages ? $json.messages[0].id : $json.message_id }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o8",
+      "name": "Marquer échec (Meta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_message_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $('Construire requête Meta').item.json.message_id, p_status: 'failed', p_error: $json.error ? JSON.stringify($json.error) : 'Erreur Graph API' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o9",
+      "name": "Marquer échec (règle)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_message_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $json.message_id, p_status: 'failed', p_error: $json.error }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Supabase (nouveau message)": {
+      "main": [
+        [
+          {
+            "node": "Filtrer messages en file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer messages en file": {
+      "main": [
+        [
+          {
+            "node": "Supabase · outbound_payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase · outbound_payload": {
+      "main": [
+        [
+          {
+            "node": "Construire requête Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire requête Meta": {
+      "main": [
+        [
+          {
+            "node": "Envoi possible ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envoi possible ?": {
+      "main": [
+        [
+          {
+            "node": "Envoyer via Graph API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marquer échec (règle)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envoyer via Graph API": {
+      "main": [
+        [
+          {
+            "node": "Marquer envoyé",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marquer échec (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}

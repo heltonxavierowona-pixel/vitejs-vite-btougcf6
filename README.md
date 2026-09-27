@@ -1,12 +1,13 @@
 # Le Closer
 
-Agent IA de prospection omnicanal (LinkedIn, X, Facebook, Instagram, WhatsApp), conçu comme un SaaS multi-tenant. Vous en êtes le premier tenant.
+Plateforme SaaS de prospection IA. Chaque utilisateur décrit son produit : l'agent en déduit les cibles et les réseaux adaptés (LinkedIn, X, Facebook, Instagram), puis la conversation se conclut sur WhatsApp. L'utilisateur connecte ses propres comptes et répond à ses clients depuis la plateforme, pendant que ses clients restent sur WhatsApp, Messenger ou Instagram.
 
 | Dossier | Contenu |
 |---|---|
 | `docs/` | Architecture (`00`) et une fiche par partie (`01` → `07`) |
 | `src/` | Plateforme web : React + Vite + TypeScript |
-| `supabase/migrations/` | Schéma Postgres multi-tenant + RLS |
+| `supabase/migrations/` | Schéma Postgres multi-clients + RLS |
+| `supabase/functions/` | Edge Functions : analyse produit, connexion WhatsApp, connexion Facebook/Instagram |
 | `n8n/workflows/` | Workflows à importer dans n8n |
 | `infra/` | n8n + Caddy (HTTPS) pour un VPS |
 
