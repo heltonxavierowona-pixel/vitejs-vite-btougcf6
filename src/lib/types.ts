@@ -91,6 +91,12 @@ export interface Prospect {
   source: string | null
   contacted_at: string | null
   created_at: string
+  intent?: Intent | null
+  intent_confidence?: number | null
+  needs_review?: boolean
+  archived_reason?: string | null
+  do_not_contact?: boolean
+  handoff_code?: string | null
 }
 
 export type OutreachProfile = 'new' | 'warming' | 'established'
@@ -114,7 +120,7 @@ export interface KeywordTrigger {
   matches: number
 }
 
-export type DraftKind = 'invitation' | 'opening' | 'reply'
+export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff'
 
 export interface AiDraft {
   id: string
@@ -149,4 +155,21 @@ export interface BrandVoice {
   formality?: 'tu' | 'vous'
   emojis?: boolean
   banned_phrases?: string[]
+}
+
+export type Intent = 'interested' | 'curious' | 'neutral' | 'not_now' | 'negative' | 'stop' | 'other'
+
+export interface IntentOutcome {
+  intent: Intent
+  confidence: number
+  evidence: string
+  phone: string | null
+  action: string
+  draft?: AiDraft
+  text?: string
+}
+
+export interface Automation {
+  handoff_auto: boolean
+  min_confidence: number
 }

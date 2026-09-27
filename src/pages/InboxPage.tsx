@@ -3,7 +3,7 @@ import ChannelBadge from '../components/ChannelBadge'
 import DraftPanel from '../components/DraftPanel'
 import ProfilePanel from '../components/ProfilePanel'
 import {
-  draftMessage, getProfile, isDemo, listConversations, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
+  draftMessage, getProfile, isDemo, listConversations, logAssistedMessage, listMessages, markDraftUsed, markRead, refreshProfile, sendMessage,
   subscribeInbox, windowOpen,
 } from '../lib/api'
 import type { AiDraft, Conversation, Message, RelationalProfile } from '../lib/types'
@@ -66,7 +66,9 @@ export default function InboxPage() {
   useEffect(() => bottom.current?.scrollIntoView({ block: 'end' }), [messages])
 
   const current = conversations.find((c) => c.id === selected)
-  const open = current ? windowOpen(current) : false
+  // LinkedIn / X : pas d'API d'envoi, l'utilisateur copie la réponse et l'envoie lui-même.
+  const assisted = current?.channel === 'linkedin' || current?.channel === 'x'
+  const open = current ? assisted || windowOpen(current) : false
 
   async function suggest() {
     if (!current) return
@@ -90,7 +92,12 @@ export default function InboxPage() {
     if (!current || !draft.trim()) return
     setError(null)
     try {
-      await sendMessage(current.id, draft.trim())
+      if (assisted) {
+        await navigator.clipboard?.writeText(draft.trim()).catch(() => {})
+        await logAssistedMessage(current.prospect_id, 'outbound', draft.trim())
+      } else {
+        await sendMessage(current.id, draft.trim())
+      }
       setDraft('')
       setSuggestion(null)
       await Promise.all([loadMessages(current.id), refresh()])
@@ -138,9 +145,13 @@ export default function InboxPage() {
             <header className="thread-head">
               <strong>{current.prospect_name}</strong>
               <ChannelBadge id={current.channel} />
-              <span className={`window ${open ? 'window-open' : 'window-closed'}`}>
-                {open ? 'Fenêtre 24 h ouverte' : 'Fenêtre 24 h fermée'}
-              </span>
+              {assisted ? (
+                <span className="window window-open">Mode assisté : copier puis envoyer</span>
+              ) : (
+                <span className={`window ${open ? 'window-open' : 'window-closed'}`}>
+                  {open ? 'Fenêtre 24 h ouverte' : 'Fenêtre 24 h fermée'}
+                </span>
+              )}
             </header>
 
             <div className="thread-body">
@@ -191,7 +202,7 @@ export default function InboxPage() {
                   <button type="button" className="btn btn-ghost" disabled={!open || suggesting} onClick={suggest}>
                     {suggesting ? 'Rédaction…' : '✨ Suggérer'}
                   </button>
-                  <button className="btn" disabled={!open || !draft.trim()}>Envoyer</button>
+                  <button className="btn" disabled={!open || !draft.trim()}>{assisted ? 'Copier' : 'Envoyer'}</button>
                 </div>
               </div>
             </form>

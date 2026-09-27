@@ -3,19 +3,22 @@ import ChannelBadge from '../components/ChannelBadge'
 import DraftPanel from '../components/DraftPanel'
 import { channelInfo } from '../data/channels'
 import {
-  createEntryLink, createTrigger, draftMessage, importProspects, markDraftUsed, listAccounts, listEntryLinks, listProducts, listProspects,
+  analyzeAssistedReply, createEntryLink, createTrigger, draftMessage, importProspects, logAssistedMessage,
+  markDraftUsed, resolveReview, listAccounts, listEntryLinks, listProducts, listProspects,
   listTriggers, markContacted, outreachQueue, setOutreachProfile, getOutreachProfile, toggleTrigger,
 } from '../lib/api'
 import { PROFILE_LABEL, STAGE_LABEL } from '../lib/outreach'
+import { actionMessage, ARCHIVE_LABEL, INTENT_LABEL } from '../lib/intentLabels'
 import type {
-  AiDraft, ChannelAccount, DraftKind, EntryLink, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
+  AiDraft, ChannelAccount, DraftKind, EntryLink, Intent, IntentOutcome, KeywordTrigger, OutreachProfile, Product, Prospect, ProspectStage,
 } from '../lib/types'
 
-type Tab = 'queue' | 'import' | 'pipeline' | 'sources'
+type Tab = 'queue' | 'replies' | 'import' | 'pipeline' | 'sources'
 type OutboundChannel = 'linkedin' | 'x'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'queue', label: 'À contacter aujourd\'hui' },
+  { id: 'replies', label: 'Réponses' },
   { id: 'import', label: 'Importer' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'sources', label: 'Sources entrantes' },
@@ -146,6 +149,8 @@ function QueueTab({ product }: { product: Product }) {
                 onUse={(text, i) => {
                   navigator.clipboard?.writeText(text).catch(() => {})
                   markDraftUsed(drafts[p.id], i)
+                  // Le premier message est gardé dans l'historique (contexte pour l'IA).
+                  if (drafts[p.id].kind === 'opening') logAssistedMessage(p.id, 'outbound', text)
                 }}
                 onClose={() => setDrafts((all) => {
                   const next = { ...all }
@@ -176,6 +181,134 @@ function QueueTab({ product }: { product: Product }) {
           </article>
         ))}
       </div>
+    </>
+  )
+}
+
+// ---------- Réponses LinkedIn / X + cas à vérifier ----------
+
+const REVIEW_CHOICES: Intent[] = ['interested', 'curious', 'neutral', 'not_now', 'negative', 'stop']
+
+function ReplyBox({ prospect, onDone }: { prospect: Prospect; onDone: () => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [outcome, setOutcome] = useState<IntentOutcome | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  if (outcome) {
+    const msg = actionMessage(outcome.action, outcome.intent)
+    return (
+      <div className="outcome">
+        <div className="outcome-head">
+          <span className={`intent intent-${outcome.intent}`}>{INTENT_LABEL[outcome.intent]}</span>
+          <span className="muted small">confiance {Math.round(outcome.confidence * 100)} %</span>
+        </div>
+        {outcome.evidence && <p className="small">« {outcome.evidence} »</p>}
+        <p className={msg.kind === 'ok' ? 'success' : msg.kind === 'error' ? 'error' : 'notice'}>{msg.text}</p>
+        {outcome.draft && (
+          <DraftPanel
+            draft={outcome.draft}
+            useLabel="Copier"
+            onUse={(t, i) => {
+              navigator.clipboard?.writeText(t).catch(() => {})
+              markDraftUsed(outcome.draft!, i)
+              logAssistedMessage(prospect.id, 'outbound', t)
+            }}
+            onClose={onDone}
+          />
+        )}
+        {!outcome.draft && <button className="btn btn-ghost" onClick={onDone}>Fermer</button>}
+      </div>
+    )
+  }
+
+  return (
+    <form
+      className="reply-box"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setError(null)
+        try {
+          setOutcome(await analyzeAssistedReply(prospect, text.trim()))
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <textarea
+        required rows={3} value={text} onChange={(e) => setText(e.target.value)}
+        placeholder={`Collez ici la réponse de ${prospect.full_name ?? 'ce prospect'} sur ${prospect.best_channel === 'x' ? 'X' : 'LinkedIn'}`}
+      />
+      {error && <p className="error">{error}</p>}
+      <button className="btn" disabled={busy || !text.trim()}>{busy ? 'Analyse…' : 'Analyser la réponse'}</button>
+    </form>
+  )
+}
+
+function RepliesTab({ prospects, onChange }: { prospects: Prospect[]; onChange: () => void }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const review = prospects.filter((p) => p.needs_review)
+  const waiting = prospects.filter((p) =>
+    (p.best_channel === 'linkedin' || p.best_channel === 'x') && ['contacted', 'replied'].includes(p.stage) && !p.needs_review)
+
+  return (
+    <>
+      {review.length > 0 && (
+        <section className="card">
+          <h2>À vérifier <span className="muted small">{review.length}</span></h2>
+          <p className="muted small">L'IA n'est pas assez sûre d'elle : choisissez la bonne intention, la suite s'applique automatiquement.</p>
+          <ul className="review-list">
+            {review.map((p) => (
+              <li key={p.id}>
+                <div>
+                  <strong>{p.full_name ?? 'Sans nom'}</strong>
+                  {p.intent && (
+                    <span className="muted small"> · l'IA hésite : {INTENT_LABEL[p.intent]} ({Math.round((p.intent_confidence ?? 0) * 100)} %)</span>
+                  )}
+                </div>
+                <div className="choice-row">
+                  {REVIEW_CHOICES.map((i) => (
+                    <button key={i} className={`btn btn-ghost intent-btn intent-${i}`} onClick={async () => { await resolveReview(p.id, i); onChange() }}>
+                      {INTENT_LABEL[i]}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="card">
+        <h2>Réponses LinkedIn / X</h2>
+        <p className="muted small">
+          LinkedIn et X n'ont pas d'API ouverte : collez ici la réponse reçue. L'IA la classe. Si l'intérêt est
+          explicite, elle prépare le message qui propose WhatsApp ; si la réponse est neutre ou négative,
+          le prospect est archivé sans relance.
+        </p>
+        {waiting.length === 0 && <p className="muted">Aucun prospect contacté en attente de réponse.</p>}
+        <div className="prospect-list">
+          {waiting.map((p) => (
+            <article key={p.id} className="card prospect">
+              <div className="prospect-head">
+                <div>
+                  <strong>{p.full_name ?? 'Sans nom'}</strong>
+                  <p className="muted">{[p.job_title, p.company].filter(Boolean).join(' · ')}</p>
+                </div>
+                <span className="tag">{STAGE_LABEL[p.stage]}</span>
+              </div>
+              {open === p.id ? (
+                <ReplyBox prospect={p} onDone={() => { setOpen(null); onChange() }} />
+              ) : (
+                <button className="btn btn-ghost" onClick={() => setOpen(p.id)}>Coller sa réponse</button>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
     </>
   )
 }
@@ -257,6 +390,7 @@ function PipelineTab({ prospects }: { prospects: Prospect[] }) {
                     <Score value={p.fit_score} />
                   </div>
                   {p.job_title && <p className="muted small">{p.job_title}</p>}
+                  {p.intent && <span className={`intent intent-${p.intent}`}>{INTENT_LABEL[p.intent]}</span>}
                   <span className="muted small">{sourceLabel(p.source)}</span>
                 </div>
               ))}
@@ -264,7 +398,19 @@ function PipelineTab({ prospects }: { prospects: Prospect[] }) {
           )
         })}
       </div>
-      {archived > 0 && <p className="muted small">{archived} prospect(s) archivé(s) (réponse négative ou sans réponse).</p>}
+      {archived > 0 && (
+        <details className="archived">
+          <summary>{archived} prospect(s) archivé(s), sans relance</summary>
+          <ul>
+            {prospects.filter((p) => p.stage === 'lost' || p.stage === 'ghosted').map((p) => (
+              <li key={p.id}>
+                <strong>{p.full_name ?? 'Sans nom'}</strong>
+                <span className="muted small"> · {p.stage === 'ghosted' ? 'sans réponse' : ARCHIVE_LABEL[p.archived_reason ?? 'manual'] ?? p.archived_reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   )
 }
@@ -465,6 +611,7 @@ export default function ProspectsPage() {
           </nav>
 
           {product && tab === 'queue' && <QueueTab key={`${product.id}-${version}`} product={product} />}
+          {tab === 'replies' && <RepliesTab prospects={prospects} onChange={() => setVersion((v) => v + 1)} />}
           {product && tab === 'import' && (
             <ImportTab product={product} onImported={() => setVersion((v) => v + 1)} />
           )}

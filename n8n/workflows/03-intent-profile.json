@@ -1,5 +1,5 @@
 {
-  "name": "03 · Profil relationnel (à chaque message reçu)",
+  "name": "03 · Intention + profil relationnel (à chaque message reçu)",
   "nodes": [
     {
       "id": "p1",
@@ -28,7 +28,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages reçus des prospects.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'inbound') return [];\nreturn [{ json: { conversation_id: r.conversation_id } }];\n"
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur messages).\n// Ne garde que les messages reçus des prospects.\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nconst r = body.record || {};\nif (body.table !== 'messages' || r.direction !== 'inbound') return [];\nreturn [{ json: { conversation_id: r.conversation_id, message_id: r.id } }];\n"
       }
     },
     {
@@ -46,12 +46,40 @@
       }
     },
     {
+      "id": "p5",
+      "name": "Edge Function · classify-message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/functions/v1/classify-message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-closer-secret",
+              "value": "={{ $env.CLOSER_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id }) }}",
+        "options": {}
+      }
+    },
+    {
       "id": "p4",
       "name": "Edge Function · update-profile",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
+        880,
         200
       ],
       "parameters": {
@@ -68,7 +96,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ conversation_id: $json.conversation_id }) }}",
+        "jsonBody": "={{ JSON.stringify({ conversation_id: $('Filtrer messages reçus').item.json.conversation_id }) }}",
         "options": {}
       }
     }
@@ -97,6 +125,17 @@
       ]
     },
     "Attendre 20 s (regrouper les rafales)": {
+      "main": [
+        [
+          {
+            "node": "Edge Function · classify-message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edge Function · classify-message": {
       "main": [
         [
           {

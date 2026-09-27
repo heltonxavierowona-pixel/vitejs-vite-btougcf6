@@ -2,7 +2,7 @@
 // testables avec Node. Voir docs/03-cerveau-ia.md.
 
 export type Channel = 'linkedin' | 'x' | 'facebook' | 'instagram' | 'whatsapp'
-export type DraftKind = 'invitation' | 'opening' | 'reply'
+export type DraftKind = 'invitation' | 'opening' | 'reply' | 'handoff'
 
 export interface AiContext {
   brand_voice: {
@@ -71,22 +71,38 @@ export const CHANNEL_FORMAT: Record<Channel, Partial<Record<DraftKind, { max: nu
 }
 
 export function draftFormat(channel: Channel, kind: DraftKind) {
-  return CHANNEL_FORMAT[channel][kind] ?? CHANNEL_FORMAT[channel].reply ?? { max: 500, rules: '' }
+  const base = CHANNEL_FORMAT[channel][kind === 'handoff' ? 'reply' : kind]
+    ?? CHANNEL_FORMAT[channel].reply ?? { max: 500, rules: '' }
+  // Le lien WhatsApp (≈ 90 caractères) s'ajoute au texte : on laisse la place.
+  return kind === 'handoff' ? { max: base.max + 120, rules: base.rules } : base
 }
+
+// Remplacé par le vrai lien wa.me après génération : l'IA n'écrit jamais d'URL elle-même.
+export const HANDOFF_PLACEHOLDER = '{{LIEN_WHATSAPP}}'
 
 // ---------- Rédaction ----------
 
 export function buildDraftSystem(ctx: AiContext, channel: Channel, kind: DraftKind): string {
   const v = ctx.brand_voice ?? {}
   const f = draftFormat(channel, kind)
-  const variants = kind === 'reply' ? 2 : 3
+  const variants = kind === 'reply' || kind === 'handoff' ? 2 : 3
+  const handoff = kind === 'handoff'
+    ? `
+BASCULE VERS WHATSAPP
+Le prospect vient d'exprimer un intérêt clair. Ton message :
+1. répond en une phrase à ce qu'il vient de dire (sans donner de prix ni de conditions) ;
+2. propose de continuer sur WhatsApp pour lui envoyer les détails et répondre plus vite ;
+3. contient EXACTEMENT le texte ${HANDOFF_PLACEHOLDER} là où doit apparaître le lien (n'écris aucune URL) ;
+4. précise que c'est à lui d'écrire en premier via ce lien, sans pression (« quand vous voulez »).
+`
+    : ''
   return `Tu écris au nom de ${v.sender_name ?? 'l\'utilisateur'}, qui vend « ${ctx.product?.name ?? 'son offre'} ».
-Tu rédiges ${kind === 'reply' ? 'une réponse' : 'un premier message'} de prospection, comme un humain attentionné, jamais comme une publicité.
+Tu rédiges ${kind === 'reply' || kind === 'handoff' ? 'une réponse' : 'un premier message'} de prospection, comme un humain attentionné, jamais comme une publicité.
 
 FORMAT DU CANAL
 ${f.rules}
 Longueur maximale : ${f.max} caractères par variante.
-
+${handoff}
 LANGUE
 - Écris dans la langue du prospect : celle de ses derniers messages s'il y en a, sinon celle de son profil.
 - Mélange de langues (français/anglais/pidgin/camfranglais) : réponds dans la langue dominante, en langage simple. N'imite pas l'argot.
@@ -217,4 +233,94 @@ export function normalizeProfile(raw: Record<string, unknown>): Record<string, u
     buying_signals: list(raw.buying_signals),
     summary: typeof raw.summary === 'string' ? raw.summary.slice(0, 400) : '',
   }
+}
+
+// ---------- Détection d'intérêt (Partie 4) ----------
+
+export type Intent = 'interested' | 'curious' | 'neutral' | 'not_now' | 'negative' | 'stop' | 'other'
+export const INTENTS: Intent[] = ['interested', 'curious', 'neutral', 'not_now', 'negative', 'stop', 'other']
+
+export const INTENT_SYSTEM = `Tu analyses la réponse d'un prospect à une démarche commerciale.
+Classe l'intention de SON DERNIER MESSAGE (les messages précédents servent de contexte).
+
+Intentions :
+- interested : intérêt CLAIR et EXPLICITE. Il demande une démo, un prix, un devis, comment acheter ou commander,
+  accepte un échange ou un appel, dit oui à la proposition, ou demande à être contacté (ex. « Oui ça m'intéresse »,
+  « Comment on fait pour commander ? », « Envoyez-moi les détails », « Yes please », « I go like am, how much? »).
+- curious : il pose une question sur l'offre sans s'engager (« C'est quoi exactement ? », « Ça marche pour les PME ? »).
+- neutral : poli mais sans engagement ni question (« Merci », « Ok », « Intéressant », « Je verrai », un pouce 👍).
+- not_now : intéressé plus tard, explicitement (« Revenez vers moi en janvier », « Pas ce trimestre »).
+- negative : refus (« Non merci », « Pas intéressé », « On a déjà un outil »).
+- stop : demande de ne plus être contacté, agacement fort, menace de signaler.
+- other : hors sujet, spam, réponse automatique d'absence.
+
+Règles :
+- La politesse n'est PAS de l'intérêt. Dans le doute entre interested et curious : curious.
+- S'il y a une vraie question sur l'offre, ce n'est pas neutral.
+- confidence : 0 à 1, ta certitude. Sois honnête : un message ambigu vaut moins de 0.7.
+- evidence : la citation exacte (courte) qui justifie ton choix.
+- phone : le numéro de téléphone s'il en donne un pour être recontacté, sinon null.
+- wants_whatsapp : true s'il mentionne WhatsApp.
+- revisit : pour not_now, la période indiquée (« janvier »), sinon null.
+
+Réponds UNIQUEMENT en JSON :
+{"intent": "interested", "confidence": 0.9, "evidence": "", "phone": null, "wants_whatsapp": false, "revisit": null, "language": "fr"}`
+
+export function buildIntentUser(ctx: AiContext): string {
+  return JSON.stringify({
+    produit: ctx.product?.name,
+    prospect: { nom: ctx.prospect.full_name, poste: ctx.prospect.job_title },
+    conversation: (ctx.conversation?.messages ?? []).slice(-8),
+  })
+}
+
+// Numéro de téléphone au format international (E.164). Numéros camerounais
+// reconnus sans indicatif (9 chiffres commençant par 6 ou 2).
+export function extractPhone(text: string, defaultCountry = '237'): string | null {
+  const candidates = text.match(/(?:\+|00)?\d[\d\s.\-()]{7,18}\d/g) ?? []
+  for (const raw of candidates) {
+    const plus = raw.trim().startsWith('+') || raw.trim().startsWith('00')
+    let digits = raw.replace(/\D/g, '')
+    if (digits.startsWith('00')) digits = digits.slice(2)
+    if (plus && digits.length >= 8 && digits.length <= 15) return `+${digits}`
+    if (defaultCountry === '237') {
+      if (digits.length === 12 && digits.startsWith('237') && /^[62]/.test(digits.slice(3))) return `+${digits}`
+      if (digits.length === 9 && /^[62]/.test(digits)) return `+237${digits}`
+    }
+  }
+  return null
+}
+
+export interface IntentResult {
+  intent: Intent
+  confidence: number
+  evidence: string
+  phone: string | null
+  wants_whatsapp: boolean
+  revisit: string | null
+}
+
+export function normalizeIntent(raw: Record<string, unknown>, lastMessage: string): IntentResult {
+  const intent = INTENTS.includes(raw.intent as Intent) ? (raw.intent as Intent) : 'other'
+  const conf = Number(raw.confidence)
+  // Le numéro vient du texte lui-même : jamais d'un numéro « deviné » par le modèle.
+  const phone = extractPhone(lastMessage) ?? (typeof raw.phone === 'string' ? extractPhone(raw.phone) : null)
+  return {
+    intent,
+    confidence: Number.isFinite(conf) ? Math.max(0, Math.min(1, Math.round(conf * 100) / 100)) : 0,
+    evidence: String(raw.evidence ?? '').slice(0, 300),
+    phone: phone && lastMessage.replace(/\D/g, '').includes(phone.replace(/\D/g, '').slice(-8)) ? phone : null,
+    wants_whatsapp: raw.wants_whatsapp === true,
+    revisit: typeof raw.revisit === 'string' ? raw.revisit.slice(0, 60) : null,
+  }
+}
+
+export function whatsappLink(displayPhone: string, code: string, productName?: string): string {
+  const text = `Bonjour, je reviens vers vous${productName ? ` pour ${productName}` : ''} (réf. ${code})`
+  return `https://wa.me/${displayPhone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
+}
+
+// Insère le lien à la place du marqueur (ou à la fin s'il manque).
+export function insertHandoffLink(text: string, link: string): string {
+  return text.includes(HANDOFF_PLACEHOLDER) ? text.split(HANDOFF_PLACEHOLDER).join(link) : `${text.trim()}\n${link}`
 }

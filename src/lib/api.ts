@@ -3,7 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AiDraft, BrandVoice, DraftKind, RelationalProfile,
+  AiDraft, Automation, BrandVoice, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
 } from './types'
@@ -13,6 +13,8 @@ import {
   demoProspects, demoTriggers,
 } from '../data/demo'
 import { demoDraft } from './demoWriter'
+import { classifyWithRules } from './intentRules'
+import { insertHandoffLink, whatsappLink } from '../../supabase/functions/_shared/prompts.ts'
 
 // Couche de données unique : Supabase si configuré, sinon données de démo en mémoire.
 export const isDemo = !supabase
@@ -28,6 +30,7 @@ const demo = {
   outreachProfile: 'new' as OutreachProfile,
   profiles: { ...demoProfiles },
   brandVoice: { ...demoBrandVoice },
+  automation: { handoff_auto: true, min_confidence: 0.7 } as Automation,
 }
 
 function unwrap<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
@@ -196,7 +199,8 @@ export function subscribeInbox(onChange: () => void): () => void {
 
 const PROSPECT_FIELDS =
   'id, product_id, full_name, job_title, company, country, language, segment_label, stage, fit_score, '
-  + 'fit_reasons, best_channel, profile_url, source, contacted_at, created_at'
+  + 'fit_reasons, best_channel, profile_url, source, contacted_at, created_at, intent, intent_confidence, '
+  + 'needs_review, archived_reason, do_not_contact, handoff_code'
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString()
 
@@ -415,4 +419,103 @@ export async function draftMessage(opts: {
 export async function markDraftUsed(draft: AiDraft, index: number) {
   if (!supabase || draft.source !== 'ai') return
   await supabase.from('ai_drafts').update({ chosen_index: index, used_at: new Date().toISOString() }).eq('id', draft.id)
+}
+
+// ---------- Détection d'intérêt & bascule WhatsApp (Partie 4) ----------
+
+export async function getAutomation(): Promise<Automation> {
+  if (!supabase) return demo.automation
+  const { data } = await supabase.from('organizations').select('automation').limit(1).single()
+  return { handoff_auto: true, min_confidence: 0.7, ...(data?.automation ?? {}) } as Automation
+}
+
+export async function saveAutomation(a: Automation) {
+  if (!supabase) {
+    demo.automation = a
+    return
+  }
+  unwrap(await supabase.from('organizations').update({ automation: a }).eq('id', await orgId()))
+}
+
+// Miroir de set_prospect_intent (SQL) pour le mode démo.
+function applyIntentDemo(prospectId: string, intent: Intent, confidence: number, phone: string | null): string {
+  const p = demo.prospects.find((x) => x.id === prospectId)
+  if (!p) return 'none'
+  const early = ['new', 'contacted', 'replied'].includes(p.stage)
+  const patch: Partial<Prospect> = { intent, intent_confidence: confidence, needs_review: false }
+  let action = 'none'
+  if (intent === 'stop' && confidence >= 0.5) {
+    Object.assign(patch, { stage: 'lost', archived_reason: 'stop', do_not_contact: true })
+    action = 'stop'
+  } else if (confidence < demo.automation.min_confidence && intent !== 'curious' && intent !== 'other') {
+    Object.assign(patch, { needs_review: true })
+    action = 'review'
+  } else if (p.do_not_contact) {
+    action = 'none'
+  } else if (intent === 'interested') {
+    if (early) patch.stage = 'interested'
+    if (phone) action = 'phone_received'
+    else if (!p.handoff_code) {
+      patch.handoff_code = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('')
+      action = 'propose_handoff'
+    }
+  } else if (intent === 'curious') {
+    if (p.stage === 'new' || p.stage === 'contacted') patch.stage = 'replied'
+    action = 'reply'
+  } else if (early && (intent === 'neutral' || intent === 'negative' || intent === 'not_now')) {
+    Object.assign(patch, { stage: 'lost', archived_reason: intent })
+    action = 'archive'
+  }
+  demo.prospects = demo.prospects.map((x) => (x.id === prospectId ? { ...x, ...patch } : x))
+  return action
+}
+
+// Journal des messages LinkedIn / X (envoyés par l'utilisateur ou réponses collées).
+export async function logAssistedMessage(prospectId: string, direction: 'inbound' | 'outbound', body: string): Promise<string> {
+  if (!supabase) {
+    if (direction === 'inbound') {
+      demo.prospects = demo.prospects.map((p) =>
+        p.id === prospectId && (p.stage === 'new' || p.stage === 'contacted') ? { ...p, stage: 'replied' } : p)
+    }
+    return crypto.randomUUID()
+  }
+  return unwrap(await supabase.rpc('log_assisted_message', {
+    p_prospect: prospectId, p_direction: direction, p_body: body,
+  })) as string
+}
+
+// L'utilisateur colle la réponse reçue sur LinkedIn / X : enregistrement + classification + action.
+export async function analyzeAssistedReply(prospect: Prospect, text: string): Promise<IntentOutcome> {
+  const messageId = await logAssistedMessage(prospect.id, 'inbound', text)
+  if (supabase) {
+    const { data, error } = await supabase.functions.invoke('classify-message', { body: { message_id: messageId } })
+    if (error) throw error
+    return data as IntentOutcome
+  }
+
+  const r = classifyWithRules(text)
+  const action = applyIntentDemo(prospect.id, r.intent, r.confidence, r.phone)
+  if (action !== 'propose_handoff') return { ...r, action }
+
+  const updated = demo.prospects.find((p) => p.id === prospect.id)!
+  const wa = demo.accounts.find((a) => a.channel === 'whatsapp')
+  if (!wa?.display_phone) return { ...r, action: 'handoff_no_whatsapp' }
+  const product = demo.products.find((p) => p.id === updated.product_id)
+  const link = whatsappLink(wa.display_phone, updated.handoff_code!, product?.name)
+  const name = (updated.full_name ?? '').split(' ')[0]
+  const draft: AiDraft = {
+    id: crypto.randomUUID(), kind: 'handoff', channel: updated.best_channel ?? 'linkedin', language: 'fr',
+    formality: 'vous', sensitive: { is: false, topics: [] }, source: 'demo',
+    rationale: 'Brouillon de démonstration. Le lien contient un code personnel : sa conversation WhatsApp sera rattachée à son historique.',
+    variants: [
+      { angle: 'réponse + WhatsApp', text: insertHandoffLink(`Avec plaisir ${name} ! Pour vous envoyer tous les détails et vous répondre plus vite, écrivez-moi sur WhatsApp quand vous voulez : {{LIEN_WHATSAPP}}`, link) },
+      { angle: 'rapide', text: insertHandoffLink(`Merci ${name} ! Le plus simple : un message sur WhatsApp et je vous envoie la présentation. {{LIEN_WHATSAPP}}`, link) },
+    ],
+  }
+  return { ...r, action: 'handoff_draft', draft }
+}
+
+export async function resolveReview(prospectId: string, intent: Intent): Promise<string> {
+  if (!supabase) return applyIntentDemo(prospectId, intent, 1, null)
+  return unwrap(await supabase.rpc('resolve_review', { p_prospect: prospectId, p_intent: intent })) as string
 }

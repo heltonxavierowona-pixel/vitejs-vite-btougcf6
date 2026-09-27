@@ -28,7 +28,7 @@ Objectif : l'IA écrit **au nom de chaque utilisateur**, dans **la langue du pro
 | Prompts (fonctions pures, testées) | `supabase/functions/_shared/prompts.ts` |
 | Appel LLM + traçage des coûts | `supabase/functions/_shared/llm.ts` |
 | Rédaction | `supabase/functions/draft-message` |
-| Profil relationnel | `supabase/functions/update-profile` + `n8n/workflows/03-relational-profile.json` |
+| Profil relationnel | `supabase/functions/update-profile` + `n8n/workflows/03-intent-profile.json` (depuis la Partie 4, ce workflow classe aussi l'intention) |
 | Base | `supabase/migrations/0004_ai_brain.sql` |
 | Plateforme | Prospects (file du jour), Conversations (suggestion + profil), Produits (connaissances), Paramètres (voix de marque) |
 

@@ -65,12 +65,12 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
 3. Déployer les fonctions :
    ```bash
    supabase functions deploy analyze-product qualify-prospects draft-message whatsapp-connect meta-connect
-   supabase functions deploy update-profile --no-verify-jwt   # appelée par n8n, protégée par CLOSER_WEBHOOK_SECRET
+   supabase functions deploy update-profile classify-message --no-verify-jwt   # appelées par n8n, protégées par CLOSER_WEBHOOK_SECRET
    supabase secrets set --env-file supabase/functions/.env
    ```
 4. **Database Webhooks** (Database → Webhooks), table `messages`, événement `INSERT`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>` :
    - `https://n8n.tondomaine.com/webhook/closer/outbound` (workflow 02, envoi) ;
-   - `https://n8n.tondomaine.com/webhook/closer/profile` (workflow 03, profil relationnel).
+   - `https://n8n.tondomaine.com/webhook/closer/profile` (workflow 03, intention + profil relationnel).
 
 ### C. n8n (VPS ≈ 5 €/mois)
 1. `infra/docker-compose.yml` + `infra/.env` (voir `infra/.env.example`).
