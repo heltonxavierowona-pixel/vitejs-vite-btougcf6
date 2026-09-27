@@ -1,0 +1,45 @@
+# Le Closer — n8n + Caddy (HTTPS automatique) pour un VPS.
+# Usage : cp .env.example .env && docker compose up -d
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - N8N_HOST=${N8N_DOMAIN}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - WEBHOOK_URL=https://${N8N_DOMAIN}/
+      - GENERIC_TIMEZONE=Africa/Douala
+      - TZ=Africa/Douala
+      - N8N_PROXY_HOPS=1
+      # Les workflows lisent SUPABASE_URL, META_VERIFY_TOKEN… via $env
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # Nécessaire pour vérifier la signature HMAC des webhooks Meta
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+    volumes:
+      - n8n_data:/home/node/.n8n
+    expose:
+      - "5678"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - N8N_DOMAIN=${N8N_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - n8n
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:

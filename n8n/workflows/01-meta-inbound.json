@@ -1,0 +1,254 @@
+{
+  "name": "01 · Meta inbound (Messenger + Instagram + WhatsApp)",
+  "nodes": [
+    {
+      "id": "a1",
+      "name": "Webhook GET (vérification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "meta-verify",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "meta",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "a2",
+      "name": "Token valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $env.META_VERIFY_TOKEN }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a3",
+      "name": "Renvoyer challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        -80
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "a4",
+      "name": "Refuser (403)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        80
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "forbidden",
+        "options": {
+          "responseCode": 403
+        }
+      }
+    },
+    {
+      "id": "b1",
+      "name": "Webhook POST (événements)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "meta-events",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meta",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "b2",
+      "name": "Vérifier signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Vérifie la signature Meta (X-Hub-Signature-256) puis renvoie le corps JSON.\nconst crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst body = item.json.body || {};\n\nif ($env.META_SKIP_SIGNATURE !== 'true') {\n  if (!item.binary || !item.binary.data) {\n    throw new Error('Corps brut absent : activer l\\'option \"Raw Body\" du nœud Webhook');\n  }\n  const raw = await this.helpers.getBinaryDataBuffer(0, 'data');\n  const expected = 'sha256=' + crypto\n    .createHmac('sha256', $env.META_APP_SECRET)\n    .update(raw)\n    .digest('hex');\n  const received = String(headers['x-hub-signature-256'] || '');\n  const ok = received.length === expected.length &&\n    crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));\n  if (!ok) throw new Error('Signature Meta invalide — requête ignorée');\n}\n\nconst parsed = typeof body === 'string' ? JSON.parse(body) : body;\nreturn [{ json: { object: parsed.object, body: parsed } }];\n"
+      }
+    },
+    {
+      "id": "b3",
+      "name": "Supabase · raw_events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/raw_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source: 'meta', payload: $json.body }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b4",
+      "name": "Extraire messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// Transforme l'enveloppe Meta en une liste de messages entrants normalisés.\n// Formats : object = page (Messenger) | instagram | whatsapp_business_account\nconst { object, body } = $input.first().json;\nconst out = [];\nconst iso = (ms) => new Date(Number(ms)).toISOString();\n\nfor (const entry of body.entry || []) {\n  if (object === 'page' || object === 'instagram') {\n    const channel = object === 'page' ? 'facebook' : 'instagram';\n    for (const ev of entry.messaging || []) {\n      const m = ev.message;\n      if (!m || m.is_echo) continue; // ignorer nos propres messages\n      out.push({\n        channel,\n        account_external_id: String(ev.recipient.id),\n        external_user_id: String(ev.sender.id),\n        display_name: null, // enrichi plus tard via l'API Profil\n        external_message_id: m.mid,\n        body: m.text || (m.attachments ? '[pièce jointe]' : '[message non textuel]'),\n        sent_at: iso(ev.timestamp),\n      });\n    }\n    // Les commentaires (entry.changes, field = comments/feed) seront traités en Partie 2.\n  }\n\n  if (object === 'whatsapp_business_account') {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const names = Object.fromEntries(\n        (v.contacts || []).map((c) => [c.wa_id, c.profile && c.profile.name])\n      );\n      for (const m of v.messages || []) {\n        out.push({\n          channel: 'whatsapp',\n          account_external_id: String(v.metadata.phone_number_id),\n          external_user_id: String(m.from),\n          display_name: names[m.from] || null,\n          external_message_id: m.id,\n          body: m.type === 'text' ? m.text.body : `[${m.type} non pris en charge]`,\n          sent_at: iso(Number(m.timestamp) * 1000),\n        });\n      }\n      // v.statuses (sent/delivered/read) seront traités en Partie 5.\n    }\n  }\n}\n\nreturn out.map((json) => ({ json }));\n"
+      }
+    },
+    {
+      "id": "b5",
+      "name": "Supabase · ingest_inbound_message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/ingest_inbound_message",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  p_channel: $json.channel,\n  p_account_external_id: $json.account_external_id,\n  p_external_user_id: $json.external_user_id,\n  p_display_name: $json.display_name,\n  p_external_message_id: $json.external_message_id,\n  p_body: $json.body,\n  p_sent_at: $json.sent_at\n}) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook GET (vérification)": {
+      "main": [
+        [
+          {
+            "node": "Token valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token valide ?": {
+      "main": [
+        [
+          {
+            "node": "Renvoyer challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refuser (403)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook POST (événements)": {
+      "main": [
+        [
+          {
+            "node": "Vérifier signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vérifier signature": {
+      "main": [
+        [
+          {
+            "node": "Supabase · raw_events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extraire messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraire messages": {
+      "main": [
+        [
+          {
+            "node": "Supabase · ingest_inbound_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}

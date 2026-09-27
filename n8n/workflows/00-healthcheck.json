@@ -1,0 +1,141 @@
+{
+  "name": "00 · Health-check quotidien",
+  "nodes": [
+    {
+      "id": "h1",
+      "name": "Chaque jour 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "h2",
+      "name": "Ping Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/organizations?select=id&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      }
+    },
+    {
+      "id": "h3",
+      "name": "Ping OpenRouter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        200
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"openrouter/auto\",\n  \"max_tokens\": 30,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un service de vérification. Réponds uniquement en JSON valide.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Renvoie {\\\"ok\\\": true, \\\"langues\\\": [\\\"fr\\\",\\\"en\\\"]} sans aucun autre texte.\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "h4",
+      "name": "Alerte Supabase",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Le Closer : Supabase injoignable ({{ $json.error?.message || \"erreur\" }})",
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "h5",
+      "name": "Alerte OpenRouter",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Le Closer : OpenRouter ne répond pas (clé, crédit ou modèle ?)",
+        "additionalFields": {}
+      }
+    }
+  ],
+  "connections": {
+    "Chaque jour 08:00": {
+      "main": [
+        [
+          {
+            "node": "Ping Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ping OpenRouter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ping Supabase": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alerte Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ping OpenRouter": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alerte OpenRouter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}
