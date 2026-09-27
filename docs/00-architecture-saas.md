@@ -104,7 +104,7 @@ Sans ces validations, seuls les comptes ajoutés comme **testeurs** de ton app p
 
 1. **Vérification d'entreprise** de ta société dans Meta Business (documents officiels).
 2. **Inscription comme Tech Provider** WhatsApp.
-3. **App Review** (accès avancé) pour : `whatsapp_business_messaging`, `whatsapp_business_management`, `business_management`, `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `instagram_basic`, `instagram_manage_messages`. Meta demande une vidéo de démonstration de chaque permission dans la plateforme.
+3. **App Review** (accès avancé) pour : `whatsapp_business_messaging`, `whatsapp_business_management`, `business_management`, `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments` (commentaires, Partie 2). Meta demande une vidéo de démonstration de chaque permission dans la plateforme.
 4. **Politique de confidentialité et conditions d'utilisation** publiées en ligne (obligatoires pour l'App Review).
 
 ---
@@ -122,8 +122,8 @@ Sans ces validations, seuls les comptes ajoutés comme **testeurs** de ton app p
 
 | # | Partie | Statut |
 |---|---|---|
-| 01 | Fondations SaaS : inscription, produits + conseiller de canaux, connexion des comptes, boîte de réception | **Livrée — en attente de validation** |
-| 02 | Ciblage & sourcing par produit | À venir |
+| 01 | Fondations SaaS : inscription, produits + conseiller de canaux, connexion des comptes, boîte de réception | ✅ Validée |
+| 02 | Ciblage & sourcing par produit : import qualifié + file du jour, mots-clés en commentaire, liens WhatsApp | **Livrée — en attente de validation** |
 | 03 | Cerveau IA (ton, langues, profil relationnel) | À venir |
 | 04 | Détection d'intérêt & bascule WhatsApp | À venir |
 | 05 | Conversation IA autonome, validations, messages envoyés depuis le téléphone (coexistence) | À venir |

@@ -1,4 +1,4 @@
-import type { ChannelAccount, Conversation, Message, Product } from '../lib/types'
+import type { ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, Product, Prospect } from '../lib/types'
 import { analyzeWithRules } from '../lib/channelAdvisor'
 
 // Données de démonstration : utilisées tant que Supabase n'est pas configuré.
@@ -33,6 +33,7 @@ export const demoProducts: Product[] = [
 export const demoAccounts: ChannelAccount[] = [
   { id: 'a1', channel: 'whatsapp', label: 'Wax & Co', display_phone: '+237 6 99 00 00 00', status: 'active', coexistence: true },
   { id: 'a2', channel: 'facebook', label: 'Wax & Co', display_phone: null, status: 'active', coexistence: false },
+  { id: 'a3', channel: 'instagram', label: 'waxandco.cm', display_phone: null, status: 'active', coexistence: false },
 ]
 
 export const demoConversations: Conversation[] = [
@@ -61,4 +62,30 @@ export const demoMessages: Message[] = [
   { id: 'm6', conversation_id: 'c3', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(60 * 31), body: 'Bonjour, vous avez des ensembles pour couple ?' },
   { id: 'm7', conversation_id: 'c3', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(60 * 30.5), body: 'Bonjour Paul ! Oui, nous faisons des ensembles assortis homme/femme. Je vous envoie quelques modèles ?' },
   { id: 'm8', conversation_id: 'c3', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(60 * 30), body: 'Merci, je regarde avec ma femme.' },
+]
+
+const prospect = (p: Partial<Prospect> & Pick<Prospect, 'id' | 'full_name'>): Prospect => ({
+  product_id: 'p1', job_title: null, company: null, country: 'Cameroun', language: 'fr', segment_label: null,
+  stage: 'new', fit_score: null, fit_reasons: [], best_channel: 'linkedin', profile_url: null,
+  source: 'import_linkedin', contacted_at: null, created_at: ago(60 * 24), ...p,
+})
+
+export const demoProspects: Prospect[] = [
+  prospect({ id: 'r1', full_name: 'Carine Ebongue', job_title: 'Directrice des Ressources Humaines', company: 'Brasseries du Littoral', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 88, fit_reasons: ['DRH d\'une entreprise de 300+ salariés', 'Basée à Douala'], profile_url: 'https://www.linkedin.com/in/carine-ebongue' }),
+  prospect({ id: 'r2', full_name: 'Serge Tchoupo', job_title: 'Directeur Général', company: 'Tchoupo Logistique', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 76, fit_reasons: ['Dirigeant de PME de 45 salariés', 'Pas de service RH dédié'], profile_url: 'https://www.linkedin.com/in/serge-tchoupo' }),
+  prospect({ id: 'r3', full_name: 'Aïcha Diallo', job_title: 'Responsable paie', company: 'Sonatel Services', country: 'Sénégal', fit_score: 64, fit_reasons: ['Utilisatrice directe du module paie', 'Influence la décision'], profile_url: 'https://www.linkedin.com/in/aicha-diallo' }),
+  prospect({ id: 'r4', full_name: 'Marc Kouassi', job_title: 'Consultant RH indépendant', country: 'Côte d\'Ivoire', fit_score: 41, fit_reasons: ['Prescripteur possible', 'Pas acheteur direct'], profile_url: 'https://www.linkedin.com/in/marc-kouassi' }),
+  prospect({ id: 'r5', full_name: 'Nadine Fotso', job_title: 'DRH', company: 'Hôtel Akwa Palace', stage: 'contacted', fit_score: 82, fit_reasons: ['DRH hôtellerie, forte rotation du personnel'], contacted_at: ago(60 * 20), profile_url: 'https://www.linkedin.com/in/nadine-fotso' }),
+  prospect({ id: 'r6', full_name: 'Paul Mbarga', product_id: 'p2', stage: 'replied', best_channel: null, source: 'facebook_inbound', fit_score: null }),
+  prospect({ id: 'r7', full_name: 'Mireille N.', product_id: 'p2', stage: 'whatsapp', best_channel: null, source: 'lien:Bio Instagram', fit_score: null }),
+  prospect({ id: 'r8', full_name: 'estelle_design', product_id: 'p2', stage: 'contacted', best_channel: null, source: 'instagram_comment', fit_score: null }),
+]
+
+export const demoEntryLinks: EntryLink[] = [
+  { id: 'e1', product_id: 'p2', label: 'Bio Instagram', code: 'WX4Q1', prefilled_text: 'Bonjour ! Je souhaite voir vos modèles wax (réf. WX4Q1)', conversations: 12 },
+  { id: 'e2', product_id: 'p1', label: 'Flyer salon RH Douala', code: 'HR7K2', prefilled_text: 'Bonjour, je souhaite une démo de Core HR (réf. HR7K2)', conversations: 3 },
+]
+
+export const demoTriggers: KeywordTrigger[] = [
+  { id: 't1', product_id: 'p2', channel_account_id: 'a3', keywords: ['info', 'prix', 'combien'], reply_text: 'Merci pour votre message ! Voici le catalogue et les prix 👗 Quelle occasion préparez-vous ?', active: true, matches: 27 },
 ]

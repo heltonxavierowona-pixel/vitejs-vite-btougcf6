@@ -10,14 +10,18 @@ const STEPS = [
     text: 'Votre WhatsApp Business (en gardant votre numéro), votre Page Facebook et votre Instagram.',
   },
   {
-    n: 3, to: '/conversations', title: 'Répondez depuis la plateforme',
+    n: 3, to: '/prospects', title: 'Trouvez vos prospects',
+    text: 'Profils LinkedIn/X qualifiés par l\'IA, liens WhatsApp traçables, mots-clés en commentaire.',
+  },
+  {
+    n: 4, to: '/conversations', title: 'Répondez depuis la plateforme',
     text: 'Vos clients restent sur WhatsApp ; vous et l\'IA leur répondez d\'ici.',
   },
 ]
 
 const PARTS = [
-  { n: 1, title: 'Fondations SaaS : comptes, produits, connexion des canaux, boîte de réception', status: 'review' },
-  { n: 2, title: 'Ciblage & sourcing (par produit)', status: 'todo' },
+  { n: 1, title: 'Fondations SaaS : comptes, produits, connexion des canaux, boîte de réception', status: 'done' },
+  { n: 2, title: 'Ciblage & sourcing par produit', status: 'review' },
   { n: 3, title: 'Cerveau IA (ton, langues, profil relationnel)', status: 'todo' },
   { n: 4, title: 'Détection d\'intérêt & bascule WhatsApp', status: 'todo' },
   { n: 5, title: 'Conversation IA autonome & validations', status: 'todo' },
@@ -25,7 +29,7 @@ const PARTS = [
   { n: 7, title: 'Tableau de bord & alertes', status: 'todo' },
 ] as const
 
-const STATUS_LABEL = { review: 'En attente de validation', todo: 'À venir' } as const
+const STATUS_LABEL = { done: 'Validée', review: 'En attente de validation', todo: 'À venir' } as const
 
 export default function OverviewPage() {
   return (

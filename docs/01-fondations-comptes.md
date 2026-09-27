@@ -54,17 +54,17 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
 3. **Devenir Tech Provider** (App → WhatsApp → démarrage rapide → « Devenir fournisseur technologique »).
 4. **Configurations Facebook Login for Business** (App → Facebook Login for Business → Configurations) :
    - une pour **WhatsApp Embedded Signup** (variation « WhatsApp Embedded Signup », token utilisateur système) → `VITE_META_WA_CONFIG_ID` ;
-   - une pour **Pages + Instagram** (permissions `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `instagram_basic`, `instagram_manage_messages`) → `VITE_META_LOGIN_CONFIG_ID`.
+   - une pour **Pages + Instagram** (permissions `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments`) → `VITE_META_LOGIN_CONFIG_ID`.
 5. **Domaines autorisés** : ajoute le domaine de la plateforme dans les réglages de l'app (obligatoire pour le SDK JavaScript).
 6. **Webhooks** : URL `https://n8n.tondomaine.com/webhook/meta`, jeton = `META_VERIFY_TOKEN`. Abonnements : WhatsApp `messages` ; Page `messages`, `messaging_postbacks`, `feed` ; Instagram `messages`, `comments`.
 7. Lancer dès maintenant la **vérification d'entreprise** et l'**App Review** (voir `00-architecture-saas.md` §6).
 
 ### B. Supabase
-1. Créer le projet, exécuter `0001_init.sql` puis `0002_saas_products_inbox.sql`.
+1. Créer le projet, exécuter les migrations dans l'ordre (`0001`, `0002`, `0003`…).
 2. Auth → activer l'e-mail (lien magique) et définir l'URL du site.
 3. Déployer les fonctions :
    ```bash
-   supabase functions deploy analyze-product whatsapp-connect meta-connect
+   supabase functions deploy analyze-product qualify-prospects whatsapp-connect meta-connect
    supabase secrets set --env-file supabase/functions/.env
    ```
 4. **Database Webhook** (Database → Webhooks) : table `messages`, événement `INSERT`, URL `https://n8n.tondomaine.com/webhook/closer/outbound`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>`.

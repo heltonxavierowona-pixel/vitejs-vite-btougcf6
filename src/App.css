@@ -58,6 +58,8 @@
 .roadmap-review .roadmap-n { background: var(--brand); color: #fff; }
 .roadmap-review { background: var(--brand-soft); }
 .roadmap-status { font-size: .8rem; color: var(--muted); }
+.roadmap-done .roadmap-n { background: var(--ok); color: #fff; }
+.roadmap-done .roadmap-status { color: var(--ok); font-weight: 600; }
 
 .small { font-size: .8rem; }
 .pad { padding: 16px; }
@@ -149,6 +151,49 @@
 .login-card { width: min(420px, 100%); }
 .login-card .brand { padding: 0; }
 
+/* ---------- Prospects ---------- */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.inline { display: flex; align-items: center; gap: 8px; font-size: .9rem; flex-wrap: wrap; }
+.inline select, .inline-form input {
+  font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+}
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); justify-self: start; }
+.segmented button { font: inherit; border: 0; background: none; padding: 7px 14px; cursor: pointer; color: var(--muted); }
+.segmented button.active { background: var(--brand); color: #fff; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
+.tabs button {
+  font: inherit; font-weight: 500; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 10px 12px; color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.tabs button.active { color: var(--brand); border-bottom-color: var(--brand); }
+.quota { display: grid; gap: 4px; margin-bottom: 16px; }
+.prospect-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.prospect { margin: 0; display: grid; gap: 8px; align-content: start; }
+.prospect p { margin: 2px 0 0; font-size: .85rem; }
+.prospect .actions { margin-top: 4px; }
+.prospect-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.fit { font-weight: 700; font-size: .8rem; padding: 2px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.fit-high { background: var(--ok-soft); color: var(--ok); }
+.fit-mid { background: var(--warn-soft); color: var(--warn); }
+.fit-low { background: var(--bg); color: var(--muted); }
+.tag { justify-self: start; font-size: .75rem; background: var(--brand-soft); color: var(--brand); padding: 2px 8px; border-radius: 6px; }
+a.btn { text-decoration: none; display: inline-block; }
+.pipeline { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+.pipeline-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: grid; gap: 8px; align-content: start; min-height: 160px; }
+.pipeline-col h3 { font-size: .85rem; display: flex; justify-content: space-between; }
+.pipeline-card { background: var(--bg); border-radius: 8px; padding: 10px; display: grid; gap: 2px; }
+.pipeline-card p { margin: 0; }
+.link-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
+.link-list li { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.link-list p { margin: 0; }
+.copy-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.copy-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; background: var(--bg); padding: 6px 8px; border-radius: 6px; }
+.inline-form { display: flex; gap: 8px; }
+.inline-form input { flex: 1; min-width: 0; }
+.trigger-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.switch { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: .85rem; }
+.form-row.two { grid-template-columns: 1fr 2fr; }
+
 @media (max-width: 760px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; }
@@ -161,7 +206,8 @@
   .inbox { height: auto; }
   .inbox-list { max-height: 260px; border-right: 0; border-bottom: 1px solid var(--border); }
   .thread { min-height: 420px; }
-  .form-row { grid-template-columns: 1fr; }
+  .form-row, .form-row.two { grid-template-columns: 1fr; }
+  .prospect-list { grid-template-columns: 1fr; }
   .roadmap li { grid-template-columns: 32px 1fr; }
   .roadmap-status { grid-column: 2; }
 }

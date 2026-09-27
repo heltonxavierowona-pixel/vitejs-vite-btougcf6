@@ -1,7 +1,15 @@
 import { supabase } from './supabase'
 import { analyzeWithRules } from './channelAdvisor'
-import type { ChannelAccount, Conversation, Message, Product, ProductInput } from './types'
-import { demoAccounts, demoConversations, demoMessages, demoProducts } from '../data/demo'
+import { qualifyWithRules, splitProfiles } from './prospectQualifier'
+import { DAILY_LIMITS } from './outreach'
+import type {
+  ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
+  Prospect, ProspectStage,
+} from './types'
+import type { ChannelId } from '../data/channels'
+import {
+  demoAccounts, demoConversations, demoEntryLinks, demoMessages, demoProducts, demoProspects, demoTriggers,
+} from '../data/demo'
 
 // Couche de données unique : Supabase si configuré, sinon données de démo en mémoire.
 export const isDemo = !supabase
@@ -11,6 +19,10 @@ const demo = {
   accounts: [...demoAccounts],
   conversations: [...demoConversations],
   messages: [...demoMessages],
+  prospects: [...demoProspects],
+  entryLinks: [...demoEntryLinks],
+  triggers: [...demoTriggers],
+  outreachProfile: 'new' as OutreachProfile,
 }
 
 function unwrap<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
@@ -21,6 +33,12 @@ function unwrap<T>({ data, error }: { data: T | null; error: { message: string }
 export const WINDOW_MS = 24 * 60 * 60 * 1000
 export const windowOpen = (c: Pick<Conversation, 'last_inbound_at'>) =>
   !!c.last_inbound_at && Date.now() - new Date(c.last_inbound_at).getTime() < WINDOW_MS
+
+async function orgId(): Promise<string> {
+  const { data } = await supabase!.from('organization_members').select('organization_id').limit(1).single()
+  if (!data) throw new Error('Organisation introuvable')
+  return data.organization_id
+}
 
 // ---------- Produits ----------
 
@@ -35,9 +53,8 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     demo.products = [p, ...demo.products]
     return p
   }
-  const { data: member } = await supabase.from('organization_members').select('organization_id').limit(1).single()
   return unwrap(
-    await supabase.from('products').insert({ ...input, organization_id: member?.organization_id }).select().single(),
+    await supabase.from('products').insert({ ...input, organization_id: await orgId() }).select().single(),
   )
 }
 
@@ -166,4 +183,159 @@ export function subscribeInbox(onChange: () => void): () => void {
   return () => {
     client.removeChannel(channel)
   }
+}
+
+// ---------- Prospects & sourcing ----------
+
+const PROSPECT_FIELDS =
+  'id, product_id, full_name, job_title, company, country, language, segment_label, stage, fit_score, '
+  + 'fit_reasons, best_channel, profile_url, source, contacted_at, created_at'
+
+const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString()
+
+export async function listProspects(productId: string): Promise<Prospect[]> {
+  if (!supabase) return demo.prospects.filter((p) => p.product_id === productId)
+  return unwrap(
+    await supabase.from('prospects').select(PROSPECT_FIELDS).eq('product_id', productId)
+      .is('deleted_at', null).order('fit_score', { ascending: false, nullsFirst: false })
+      .returns<Prospect[]>(),
+  )
+}
+
+export async function getOutreachProfile(): Promise<OutreachProfile> {
+  if (!supabase) return demo.outreachProfile
+  const { data } = await supabase.from('organizations').select('outreach_profile').limit(1).single()
+  return (data?.outreach_profile ?? 'new') as OutreachProfile
+}
+
+export async function setOutreachProfile(profile: OutreachProfile) {
+  if (!supabase) {
+    demo.outreachProfile = profile
+    return
+  }
+  unwrap(await supabase.from('organizations').update({ outreach_profile: profile }).eq('id', await orgId()))
+}
+
+// File du jour : meilleurs prospects « à contacter », dans la limite du rythme autorisé.
+export async function outreachQueue(productId: string, channel: ChannelId): Promise<{ queue: Prospect[]; limit: number; doneToday: number }> {
+  const profile = await getOutreachProfile()
+  const limit = DAILY_LIMITS[profile][channel] ?? 0
+  if (!supabase) {
+    const doneToday = demo.prospects.filter((p) => p.best_channel === channel && isToday(p.contacted_at)).length
+    const queue = demo.prospects
+      .filter((p) => p.product_id === productId && p.best_channel === channel && p.stage === 'new')
+      .sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1))
+      .slice(0, Math.max(0, limit - doneToday))
+    return { queue, limit, doneToday }
+  }
+  const queue = unwrap(await supabase.rpc('outreach_queue', { p_product: productId, p_channel: channel })) as Prospect[]
+  const { count } = await supabase.from('prospects').select('id', { count: 'exact', head: true })
+    .eq('best_channel', channel).gte('contacted_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+  return { queue, limit, doneToday: count ?? 0 }
+}
+
+export async function markContacted(prospectId: string) {
+  const patch = { stage: 'contacted' as ProspectStage, contacted_at: new Date().toISOString() }
+  if (!supabase) {
+    demo.prospects = demo.prospects.map((p) => (p.id === prospectId ? { ...p, ...patch } : p))
+    return
+  }
+  unwrap(await supabase.from('prospects').update(patch).eq('id', prospectId))
+}
+
+export async function setStage(prospectId: string, stage: ProspectStage) {
+  if (!supabase) {
+    demo.prospects = demo.prospects.map((p) => (p.id === prospectId ? { ...p, stage } : p))
+    return
+  }
+  unwrap(await supabase.from('prospects').update({ stage }).eq('id', prospectId))
+}
+
+// Import de profils collés (LinkedIn / X) + qualification IA, avec repli par règles.
+export async function importProspects(
+  product: Product,
+  channel: 'linkedin' | 'x',
+  raw: string,
+): Promise<{ added: number; skipped: number; source: 'ai' | 'rules' }> {
+  const items = splitProfiles(raw)
+  if (!items.length) throw new Error('Aucun profil détecté')
+  if (items.length > 20) throw new Error('20 profils maximum par import')
+
+  if (supabase) {
+    const { data, error } = await supabase.functions.invoke('qualify-prospects', {
+      body: { product_id: product.id, channel, items },
+    })
+    if (!error && data) return { added: data.inserted.length, skipped: data.skipped, source: 'ai' }
+    console.warn('Qualification IA indisponible, repli sur les règles', error)
+  }
+
+  const known = new Set((supabase ? await listProspects(product.id) : demo.prospects).map((p) => p.profile_url))
+  const fresh = items.filter((i) => !i.profile_url || !known.has(i.profile_url))
+  const rows: Prospect[] = fresh.map((item) => ({
+    ...qualifyWithRules(product, item),
+    id: crypto.randomUUID(),
+    product_id: product.id,
+    best_channel: channel,
+    stage: 'new',
+    source: `import_${channel}`,
+    contacted_at: null,
+    created_at: new Date().toISOString(),
+  }))
+
+  if (supabase) {
+    const org = await orgId()
+    unwrap(await supabase.from('prospects').insert(rows.map((r, n) => ({
+      organization_id: org,
+      product_id: r.product_id, full_name: r.full_name, job_title: r.job_title, company: r.company,
+      language: r.language, segment_label: r.segment_label, fit_score: r.fit_score, fit_reasons: r.fit_reasons,
+      profile_url: r.profile_url, profile_text: fresh[n].text, best_channel: r.best_channel, source: r.source,
+      stage: r.stage, qualified_at: new Date().toISOString(),
+    }))))
+  } else {
+    demo.prospects = [...rows, ...demo.prospects]
+  }
+  return { added: rows.length, skipped: items.length - fresh.length, source: 'rules' }
+}
+
+export async function listEntryLinks(productId: string): Promise<EntryLink[]> {
+  if (!supabase) return demo.entryLinks.filter((l) => l.product_id === productId)
+  return unwrap(await supabase.from('entry_links').select('*').eq('product_id', productId).order('created_at'))
+}
+
+export async function createEntryLink(product: Product, label: string): Promise<EntryLink> {
+  const code = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('')
+  const link = {
+    product_id: product.id,
+    label,
+    code,
+    prefilled_text: `Bonjour, je souhaite en savoir plus sur ${product.name} (réf. ${code})`,
+  }
+  if (!supabase) {
+    const created = { ...link, id: crypto.randomUUID(), conversations: 0 }
+    demo.entryLinks = [...demo.entryLinks, created]
+    return created
+  }
+  return unwrap(await supabase.from('entry_links').insert({ ...link, organization_id: await orgId() }).select().single())
+}
+
+export async function listTriggers(productId: string): Promise<KeywordTrigger[]> {
+  if (!supabase) return demo.triggers.filter((t) => t.product_id === productId)
+  return unwrap(await supabase.from('keyword_triggers').select('*').eq('product_id', productId).order('created_at'))
+}
+
+export async function createTrigger(t: Pick<KeywordTrigger, 'product_id' | 'channel_account_id' | 'keywords' | 'reply_text'>): Promise<KeywordTrigger> {
+  if (!supabase) {
+    const created = { ...t, id: crypto.randomUUID(), active: true, matches: 0 }
+    demo.triggers = [...demo.triggers, created]
+    return created
+  }
+  return unwrap(await supabase.from('keyword_triggers').insert({ ...t, organization_id: await orgId() }).select().single())
+}
+
+export async function toggleTrigger(id: string, active: boolean) {
+  if (!supabase) {
+    demo.triggers = demo.triggers.map((t) => (t.id === id ? { ...t, active } : t))
+    return
+  }
+  unwrap(await supabase.from('keyword_triggers').update({ active }).eq('id', id))
 }

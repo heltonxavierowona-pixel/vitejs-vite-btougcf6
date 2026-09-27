@@ -68,3 +68,46 @@ export interface ChannelAccount {
   status: string
   coexistence: boolean
 }
+
+export type ProspectStage =
+  | 'new' | 'contacted' | 'replied' | 'interested' | 'whatsapp' | 'hot' | 'won' | 'lost' | 'ghosted'
+
+export interface Prospect {
+  id: string
+  product_id: string | null
+  full_name: string | null
+  job_title: string | null
+  company: string | null
+  country: string | null
+  language: string | null
+  segment_label: string | null
+  stage: ProspectStage
+  fit_score: number | null
+  fit_reasons: string[]
+  best_channel: ChannelId | null
+  profile_url: string | null
+  source: string | null
+  contacted_at: string | null
+  created_at: string
+}
+
+export type OutreachProfile = 'new' | 'warming' | 'established'
+
+export interface EntryLink {
+  id: string
+  product_id: string
+  label: string
+  code: string
+  prefilled_text: string
+  conversations: number
+}
+
+export interface KeywordTrigger {
+  id: string
+  product_id: string
+  channel_account_id: string
+  keywords: string[]
+  reply_text: string
+  active: boolean
+  matches: number
+}

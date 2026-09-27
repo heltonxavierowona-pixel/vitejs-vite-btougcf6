@@ -1,5 +1,5 @@
 {
-  "name": "01 · Meta inbound (Messenger + Instagram + WhatsApp)",
+  "name": "01 · Meta inbound (messages + commentaires)",
   "nodes": [
     {
       "id": "a1",
@@ -145,7 +145,7 @@
     },
     {
       "id": "b4",
-      "name": "Extraire messages",
+      "name": "Extraire événements",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -153,7 +153,7 @@
         400
       ],
       "parameters": {
-        "jsCode": "// Transforme l'enveloppe Meta en une liste de messages entrants normalisés.\n// Formats : object = page (Messenger) | instagram | whatsapp_business_account\nconst { object, body } = $input.first().json;\nconst out = [];\nconst iso = (ms) => new Date(Number(ms)).toISOString();\n\nfor (const entry of body.entry || []) {\n  if (object === 'page' || object === 'instagram') {\n    const channel = object === 'page' ? 'facebook' : 'instagram';\n    for (const ev of entry.messaging || []) {\n      const m = ev.message;\n      if (!m || m.is_echo) continue; // ignorer nos propres messages\n      out.push({\n        channel,\n        account_external_id: String(ev.recipient.id),\n        external_user_id: String(ev.sender.id),\n        display_name: null, // enrichi plus tard via l'API Profil\n        external_message_id: m.mid,\n        body: m.text || (m.attachments ? '[pièce jointe]' : '[message non textuel]'),\n        sent_at: iso(ev.timestamp),\n      });\n    }\n    // Les commentaires (entry.changes, field = comments/feed) seront traités en Partie 2.\n  }\n\n  if (object === 'whatsapp_business_account') {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const names = Object.fromEntries(\n        (v.contacts || []).map((c) => [c.wa_id, c.profile && c.profile.name])\n      );\n      for (const m of v.messages || []) {\n        out.push({\n          channel: 'whatsapp',\n          account_external_id: String(v.metadata.phone_number_id),\n          external_user_id: String(m.from),\n          display_name: names[m.from] || null,\n          external_message_id: m.id,\n          body: m.type === 'text' ? m.text.body : `[${m.type} non pris en charge]`,\n          sent_at: iso(Number(m.timestamp) * 1000),\n        });\n      }\n      // v.statuses (sent/delivered/read) seront traités en Partie 5.\n    }\n  }\n}\n\nreturn out.map((json) => ({ json }));\n"
+        "jsCode": "// Transforme l'enveloppe Meta en une liste d'événements normalisés :\n//   kind = 'message' : message privé reçu (Messenger, Instagram, WhatsApp)\n//   kind = 'comment' : commentaire sur une publication (Facebook, Instagram)\nconst { object, body } = $input.first().json;\nconst out = [];\nconst iso = (ms) => new Date(Number(ms)).toISOString();\n\nfor (const entry of body.entry || []) {\n  if (object === 'page' || object === 'instagram') {\n    const channel = object === 'page' ? 'facebook' : 'instagram';\n    for (const ev of entry.messaging || []) {\n      const m = ev.message;\n      if (!m || m.is_echo) continue; // ignorer nos propres messages\n      out.push({\n        kind: 'message',\n        channel,\n        account_external_id: String(ev.recipient.id),\n        external_user_id: String(ev.sender.id),\n        display_name: null, // enrichi plus tard via l'API Profil\n        external_message_id: m.mid,\n        body: m.text || (m.attachments ? '[pièce jointe]' : '[message non textuel]'),\n        sent_at: iso(ev.timestamp),\n      });\n    }\n\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      // Facebook : field = feed, item = comment, verb = add\n      if (channel === 'facebook' && change.field === 'feed' && v.item === 'comment' && v.verb === 'add') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.comment_id),\n          post_id: v.post_id ? String(v.post_id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.name : null,\n          body: v.message || '',\n        });\n      }\n      // Instagram : field = comments\n      if (channel === 'instagram' && change.field === 'comments') {\n        out.push({\n          kind: 'comment',\n          channel,\n          account_external_id: String(entry.id),\n          comment_id: String(v.id),\n          post_id: v.media ? String(v.media.id) : null,\n          from_id: v.from ? String(v.from.id) : null,\n          from_name: v.from ? v.from.username : null,\n          body: v.text || '',\n        });\n      }\n    }\n  }\n\n  if (object === 'whatsapp_business_account') {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const names = Object.fromEntries(\n        (v.contacts || []).map((c) => [c.wa_id, c.profile && c.profile.name])\n      );\n      for (const m of v.messages || []) {\n        out.push({\n          kind: 'message',\n          channel: 'whatsapp',\n          account_external_id: String(v.metadata.phone_number_id),\n          external_user_id: String(m.from),\n          display_name: names[m.from] || null,\n          external_message_id: m.id,\n          body: m.type === 'text' ? m.text.body : `[${m.type} non pris en charge]`,\n          sent_at: iso(Number(m.timestamp) * 1000),\n        });\n      }\n      // v.statuses (sent/delivered/read) seront traités en Partie 5.\n    }\n  }\n}\n\nreturn out.map((json) => ({ json }));\n"
       }
     },
     {
@@ -162,8 +162,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
-        400
+        880,
+        320
       ],
       "parameters": {
         "method": "POST",
@@ -173,6 +173,159 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  p_channel: $json.channel,\n  p_account_external_id: $json.account_external_id,\n  p_external_user_id: $json.external_user_id,\n  p_display_name: $json.display_name,\n  p_external_message_id: $json.external_message_id,\n  p_body: $json.body,\n  p_sent_at: $json.sent_at\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b6",
+      "name": "Type ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "k1",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "comment",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b7",
+      "name": "Supabase · handle_comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/handle_comment",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  p_channel: $json.channel,\n  p_account_external_id: $json.account_external_id,\n  p_comment_id: $json.comment_id,\n  p_post_id: $json.post_id,\n  p_from_id: $json.from_id,\n  p_from_name: $json.from_name,\n  p_body: $json.body\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b8",
+      "name": "Réponse à envoyer ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.message_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b9",
+      "name": "Réponse privée (Graph API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        440
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/' + ($env.META_GRAPH_VERSION || 'v23.0') + '/me/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { comment_id: $json.comment_id }, message: { text: $json.reply } }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b10",
+      "name": "Marquer réponse envoyée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        380
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_message_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $('Supabase · handle_comment').item.json.message_id, p_status: 'sent', p_external_id: $json.message_id }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b11",
+      "name": "Marquer réponse en échec",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        540
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_message_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_message: $('Supabase · handle_comment').item.json.message_id, p_status: 'failed', p_error: $json.error ? JSON.stringify($json.error) : 'Erreur Graph API' }) }}",
         "options": {}
       }
     }
@@ -227,18 +380,77 @@
             "index": 0
           },
           {
-            "node": "Extraire messages",
+            "node": "Extraire événements",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extraire messages": {
+    "Extraire événements": {
       "main": [
         [
           {
+            "node": "Type ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Type ?": {
+      "main": [
+        [
+          {
+            "node": "Supabase · handle_comment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Supabase · ingest_inbound_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase · handle_comment": {
+      "main": [
+        [
+          {
+            "node": "Réponse à envoyer ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Réponse à envoyer ?": {
+      "main": [
+        [
+          {
+            "node": "Réponse privée (Graph API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Réponse privée (Graph API)": {
+      "main": [
+        [
+          {
+            "node": "Marquer réponse envoyée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marquer réponse en échec",
             "type": "main",
             "index": 0
           }
