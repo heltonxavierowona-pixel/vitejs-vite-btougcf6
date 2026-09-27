@@ -25,8 +25,8 @@ const PARTS = [
   { n: 3, title: 'Cerveau IA : rédaction, ton adapté, multilingue, profil relationnel', status: 'done' },
   { n: 4, title: 'Détection d\'intérêt & bascule WhatsApp', status: 'done' },
   { n: 5, title: 'Conversation WhatsApp autonome & validations (prix, contrat)', status: 'done' },
-  { n: 6, title: 'Closing (présentation puis appel) & relances (2 max, puis abandon)', status: 'review' },
-  { n: 7, title: 'Tableau de bord & alertes', status: 'todo' },
+  { n: 6, title: 'Closing (présentation puis appel) & relances (2 max, puis abandon)', status: 'done' },
+  { n: 7, title: 'Tableau de bord visuel & alertes immédiates (Telegram, e-mail)', status: 'review' },
 ] as const
 
 const STATUS_LABEL = { done: 'Validée', review: 'En attente de validation', todo: 'À venir' } as const

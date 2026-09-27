@@ -11,7 +11,7 @@ import ProspectsPage from './pages/ProspectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ValidationsPage from './pages/ValidationsPage'
 import { APPROVALS_CHANGED, countPendingApprovals } from './lib/api'
-import UpcomingPage from './pages/UpcomingPage'
+import ReportsPage from './pages/ReportsPage'
 import './App.css'
 
 const NAV = [
@@ -96,16 +96,7 @@ export default function App() {
           <Route path="/prospects" element={<ProspectsPage />} />
           <Route path="/parametres" element={<SettingsPage />} />
           <Route path="/validations" element={<ValidationsPage />} />
-          <Route
-            path="/rapports"
-            element={
-              <UpcomingPage
-                part={7}
-                title="Rapports"
-                description="Tableau de bord visuel : entonnoir par canal, taux de réponse, prospects chauds, coûts IA et WhatsApp."
-              />
-            }
-          />
+          <Route path="/rapports" element={<ReportsPage />} />
         </Routes>
       </main>
     </div>

@@ -1,6 +1,93 @@
 import { useEffect, useState } from 'react'
-import { getAutomation, getBrandVoice, saveAutomation, saveBrandVoice } from '../lib/api'
-import type { Automation, BrandVoice } from '../lib/types'
+import {
+  getAlertSettings, getAutomation, getBrandVoice, isDemo, saveAlertSettings, saveAutomation, saveBrandVoice,
+  sendTestAlert, telegramConfigured, telegramConnectUrl, unlinkTelegram,
+} from '../lib/api'
+import type { AlertSettings, Automation, BrandVoice } from '../lib/types'
+
+const EVENTS: { key: keyof AlertSettings['events']; label: string }[] = [
+  { key: 'hot', label: '🔥 Un prospect devient chaud' },
+  { key: 'approval', label: '⏸ Une réponse de l\'IA attend ma validation' },
+  { key: 'escalation', label: '🙋 L\'IA me passe la main' },
+  { key: 'won', label: '🏆 Une vente est gagnée' },
+]
+
+// Alertes immédiates (Partie 7) : Telegram et/ou e-mail.
+function AlertsForm() {
+  const [a, setA] = useState<AlertSettings | null>(null)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const load = () => getAlertSettings().then(setA)
+  useEffect(() => {
+    getAlertSettings().then(setA)
+  }, [])
+  if (!a) return null
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
+    setMessage(null)
+    try {
+      await fn()
+      setMessage({ kind: 'ok', text: ok })
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  return (
+    <form
+      className="card form narrow"
+      onSubmit={(e) => {
+        e.preventDefault()
+        run(() => saveAlertSettings({ email: a.email?.trim() || null, events: a.events }), 'Enregistré.')
+      }}
+    >
+      <h2>Alertes</h2>
+      <p className="muted small">Prévenu tout de suite, sur votre téléphone, quand quelque chose demande votre attention.</p>
+
+      <div className="alert-channel">
+        <strong>Telegram</strong>
+        {a.telegram_linked ? (
+          <>
+            <span className="connected">● Connecté{a.telegram_username ? ` (@${a.telegram_username})` : ''}</span>
+            <button type="button" className="link small" onClick={() => run(async () => { await unlinkTelegram(); await load() }, 'Telegram déconnecté.')}>Déconnecter</button>
+          </>
+        ) : (
+          <button
+            type="button" className="btn btn-ghost" disabled={!telegramConfigured}
+            onClick={() => run(async () => {
+              const url = await telegramConnectUrl()
+              if (!isDemo) window.open(url, '_blank', 'noopener')
+              await load()
+            }, isDemo ? 'Démo : Telegram connecté.' : 'Dans Telegram, appuyez sur « Démarrer » : la connexion se fait toute seule.')}
+          >
+            Connecter Telegram
+          </button>
+        )}
+      </div>
+
+      <label>
+        E-mail d'alerte
+        <input type="email" value={a.email ?? ''} onChange={(e) => setA({ ...a, email: e.target.value })} placeholder="vous@entreprise.com" />
+      </label>
+
+      <fieldset className="events">
+        <legend className="small muted">M'alerter quand…</legend>
+        {EVENTS.map((ev) => (
+          <label key={ev.key} className="check">
+            <input type="checkbox" checked={a.events[ev.key]} onChange={(e) => setA({ ...a, events: { ...a.events, [ev.key]: e.target.checked } })} />
+            <span>{ev.label}</span>
+          </label>
+        ))}
+      </fieldset>
+
+      {message && <p className={message.kind === 'ok' ? 'success' : 'error'}>{message.text}</p>}
+      <div className="actions">
+        <button className="btn">Enregistrer</button>
+        <button type="button" className="btn btn-ghost" disabled={isDemo || (!a.telegram_linked && !a.email)}
+          onClick={() => run(sendTestAlert, 'Alerte de test envoyée.')}>
+          Envoyer une alerte de test
+        </button>
+      </div>
+    </form>
+  )
+}
 
 // Automatisation de la bascule WhatsApp (Partie 4).
 function AutomationForm() {
@@ -158,6 +245,7 @@ export default function SettingsPage() {
       </form>
 
       <AutomationForm />
+      <AlertsForm />
     </>
   )
 }

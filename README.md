@@ -23,4 +23,13 @@ npm run dev
 
 n8n → *Workflows* → *Import from file* → `n8n/workflows/*.json`, puis sélectionner dans chaque nœud HTTP le credential **Supabase** (clé service_role) ou **Header Auth** (OpenRouter : `Authorization: Bearer <clé>`), et dans les nœuds Telegram le credential du bot.
 
-Commencez par `docs/00-architecture-saas.md`.
+## Parcours de l'utilisateur
+
+1. **Produits** : il décrit son offre ; l'agent en déduit cibles, réseaux, ton, langues (Partie 1).
+2. **Canaux** : il connecte son WhatsApp Business (coexistence), sa Page Facebook et son Instagram (Partie 1).
+3. **Prospects** : file du jour LinkedIn/X qualifiée, liens WhatsApp traçables, mots-clés en commentaire (Partie 2).
+4. **Conversations** : l'IA rédige, puis converse seule sur WhatsApp ; prix et contrats passent par **Validations** (Parties 3 à 5).
+5. **Closing & relances** : présentation, puis appel ; 2 relances maximum, puis abandon (Partie 6).
+6. **Rapports & alertes** : tableau de bord visuel ; Telegram / e-mail dès qu'un prospect devient chaud (Partie 7).
+
+Commencez par `docs/00-architecture-saas.md`, puis `docs/01-fondations-comptes.md` §1.3 pour la mise en service.

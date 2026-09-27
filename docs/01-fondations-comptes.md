@@ -70,12 +70,14 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
    ```
 4. **Database Webhooks** (Database → Webhooks), table `messages`, en-tête `x-closer-secret: <CLOSER_WEBHOOK_SECRET>` :
    - `https://n8n.tondomaine.com/webhook/closer/outbound` (workflow 02, envoi), événements **INSERT et UPDATE** (envoi après validation) ;
-   - `https://n8n.tondomaine.com/webhook/closer/profile` (workflow 03, intention + profil + pilote automatique), événement **INSERT**.
+   - `https://n8n.tondomaine.com/webhook/closer/profile` (workflow 03, intention + profil + pilote automatique), événement **INSERT** ;
+   - table `alerts`, **INSERT** → `https://n8n.tondomaine.com/webhook/closer/alerts` (workflow 05, alertes).
 
 ### C. n8n (VPS ≈ 5 €/mois)
 1. `infra/docker-compose.yml` + `infra/.env` (voir `infra/.env.example`).
 2. Importer `n8n/workflows/*.json`, sélectionner les credentials (Supabase service_role, OpenRouter, Telegram).
-3. Activer les workflows (00 à 04).
+3. Créer le bot Telegram de la plateforme (`@BotFather`) et un credential SMTP (ex. Brevo) — voir `07-tableau-de-bord-alertes.md` §7.5.
+4. Activer les workflows (00 à 06).
 
 ### D. Plateforme web
 Déployer ce dépôt (Vercel / Cloudflare Pages) avec les variables de `.env.example` (clés **publiques** uniquement).

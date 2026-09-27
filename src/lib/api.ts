@@ -3,7 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AiDraft, Approval, Automation, BrandVoice, ClosingStep, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
+  AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
 } from './types'
@@ -36,6 +36,10 @@ const demo = {
     followups_enabled: true, followup_delays: [2, 5],
   } as Automation,
   templates: [...demoTemplates],
+  alertSettings: {
+    email: 'awa@waxandco.cm', events: { hot: true, approval: true, escalation: true, won: true },
+    telegram_username: null, telegram_linked: false,
+  } as AlertSettings,
   approvals: [...demoApprovals],
 }
 
@@ -783,4 +787,124 @@ export function advanceDemoTime(days: number): { sent: number; tasks: number; ab
     }
   })
   return result
+}
+
+// ---------- Tableau de bord & alertes (Partie 7) ----------
+
+const TELEGRAM_BOT = import.meta.env.VITE_TELEGRAM_BOT as string | undefined
+
+function channelOf(source: string | null): ChannelId {
+  if (!source) return 'whatsapp'
+  if (source.startsWith('import_linkedin')) return 'linkedin'
+  if (source.startsWith('import_x')) return 'x'
+  if (source.startsWith('facebook')) return 'facebook'
+  if (source.startsWith('instagram')) return 'instagram'
+  return 'whatsapp'
+}
+
+// Mode démo : mêmes définitions que dashboard_stats (SQL), sur les données de démonstration,
+// avec une activité quotidienne simulée.
+function demoStats(days: number, productId: string | null): DashboardStats {
+  const ps = demo.prospects.filter((p) => !productId || p.product_id === productId)
+  const has = (p: Prospect, dir: 'inbound' | 'outbound') =>
+    demo.conversations.some((c) => c.prospect_id === p.id && demo.messages.some((m) => m.conversation_id === c.id && m.direction === dir))
+  const replied = (p: Prospect) => has(p, 'inbound') || ['replied', 'interested', 'whatsapp', 'hot', 'won'].includes(p.stage)
+  const contacted = (p: Prospect) => p.stage !== 'new' || !!p.contacted_at || has(p, 'outbound')
+  const interested = (p: Prospect) => p.intent === 'interested' || ['interested', 'whatsapp', 'hot', 'won'].includes(p.stage)
+  const onWa = (p: Prospect) => p.stage === 'whatsapp' || demo.conversations.some((c) => c.prospect_id === p.id && c.channel === 'whatsapp')
+  const hot = (p: Prospect) => !!p.closing_step || p.stage === 'hot' || p.stage === 'won'
+  const count = (f: (p: Prospect) => boolean) => ps.filter(f).length
+  const seed = (i: number) => Math.abs(Math.sin(i * 12.9898 + days) * 43758.5453) % 1
+  const daily = Array.from({ length: days + 1 }, (_, i) => {
+    const d = new Date(Date.now() - (days - i) * 86_400_000)
+    const base = 3 + Math.round(6 * (i / days)) + (d.getDay() === 0 ? -2 : 0)
+    const inbound = Math.max(0, base + Math.round(seed(i) * 5))
+    return { day: d.toISOString().slice(0, 10), inbound, outbound: Math.max(0, inbound + Math.round(seed(i + 99) * 4) - 1) }
+  })
+  const channels: ChannelId[] = ['linkedin', 'x', 'facebook', 'instagram', 'whatsapp']
+  return {
+    days,
+    kpis: {
+      prospects: ps.length, contacted: count(contacted), replied: count((p) => contacted(p) && replied(p)),
+      hot_now: count((p) => p.stage === 'hot'), calls_booked: count((p) => p.closing_step === 'call_booked'),
+      won: count((p) => p.stage === 'won'), pending_approvals: demo.approvals.length,
+      ai_cost_usd: 0.012 * days + 0.4, templates_sent: 3, ai_replies: daily.reduce((n, d) => n + Math.round(d.outbound * 0.7), 0),
+    },
+    funnel: [
+      { stage: 'Prospects', n: ps.length }, { stage: 'Contactés', n: count(contacted) },
+      { stage: 'Ont répondu', n: count(replied) }, { stage: 'Intéressés', n: count(interested) },
+      { stage: 'Sur WhatsApp', n: count(onWa) }, { stage: 'Chauds', n: count(hot) },
+      { stage: 'Appel planifié', n: count((p) => p.closing_step === 'call_booked') }, { stage: 'Gagnés', n: count((p) => p.stage === 'won') },
+    ],
+    by_channel: channels
+      .map((c) => ({ channel: c, prospects: ps.filter((p) => channelOf(p.source) === c).length, hot: ps.filter((p) => channelOf(p.source) === c && hot(p)).length }))
+      .filter((c) => c.prospects > 0),
+    daily,
+    ai_cost_by_feature: [
+      { feature: 'autopilot', usd: 0.006 * days }, { feature: 'draft', usd: 0.003 * days },
+      { feature: 'profile', usd: 0.002 * days }, { feature: 'intent', usd: 0.001 * days },
+      { feature: 'qualify', usd: 0.08 }, { feature: 'analyze_product', usd: 0.02 },
+    ],
+    hot_list: ps.filter((p) => p.stage === 'hot').map((p) => ({
+      id: p.id, full_name: p.full_name, company: p.company, closing_step: p.closing_step ?? null,
+      product: demo.products.find((x) => x.id === p.product_id)?.name ?? null,
+      conversation_id: demo.conversations.find((c) => c.prospect_id === p.id)?.id ?? null,
+    })),
+    recent_alerts: [
+      { kind: 'approval', title: '⏸ Réponse à valider : Mireille N.', created_at: new Date(Date.now() - 180_000).toISOString(), link_path: '/validations' },
+      { kind: 'hot', title: '🔥 Prospect chaud : Aline Mballa', created_at: new Date(Date.now() - 3_600_000 * 5).toISOString(), link_path: '/prospects' },
+    ],
+  }
+}
+
+export async function getDashboardStats(days: number, productId: string | null): Promise<DashboardStats> {
+  if (!supabase) return demoStats(days, productId)
+  return unwrap(await supabase.rpc('dashboard_stats', { p_days: days, p_product: productId })) as DashboardStats
+}
+
+export async function getAlertSettings(): Promise<AlertSettings> {
+  if (!supabase) return demo.alertSettings
+  const { data } = await supabase.from('organizations')
+    .select('alert_settings, telegram_username, telegram_chat_id').limit(1).single()
+  const s = (data?.alert_settings ?? {}) as Partial<AlertSettings>
+  return {
+    email: s.email ?? null,
+    events: { hot: true, approval: true, escalation: true, won: true, ...(s.events ?? {}) },
+    telegram_username: data?.telegram_username ?? null,
+    telegram_linked: !!data?.telegram_chat_id,
+  }
+}
+
+export async function saveAlertSettings(a: Pick<AlertSettings, 'email' | 'events'>) {
+  if (!supabase) {
+    demo.alertSettings = { ...demo.alertSettings, ...a }
+    return
+  }
+  unwrap(await supabase.from('organizations').update({ alert_settings: { email: a.email || null, events: a.events } }).eq('id', await orgId()))
+}
+
+export const telegramConfigured = !!TELEGRAM_BOT || !supabase
+
+// Lien t.me vers le bot avec un code à usage unique ; le bot relie ce Telegram à l'organisation.
+export async function telegramConnectUrl(): Promise<string> {
+  if (!supabase) {
+    demo.alertSettings = { ...demo.alertSettings, telegram_linked: true, telegram_username: 'awa_cm' }
+    return 'https://t.me/'
+  }
+  if (!TELEGRAM_BOT) throw new Error('VITE_TELEGRAM_BOT manquant')
+  const code = unwrap(await supabase.rpc('telegram_link_code')) as string
+  return `https://t.me/${TELEGRAM_BOT}?start=${code}`
+}
+
+export async function unlinkTelegram() {
+  if (!supabase) {
+    demo.alertSettings = { ...demo.alertSettings, telegram_linked: false, telegram_username: null }
+    return
+  }
+  unwrap(await supabase.from('organizations').update({ telegram_chat_id: null, telegram_username: null }).eq('id', await orgId()))
+}
+
+export async function sendTestAlert() {
+  if (!supabase) return
+  unwrap(await supabase.rpc('send_test_alert'))
 }

@@ -218,3 +218,32 @@ export interface Approval {
   created_at: string
   context: { from: 'prospect' | 'nous'; text: string }[]
 }
+
+export interface DashboardStats {
+  days: number
+  kpis: {
+    prospects: number
+    contacted: number
+    replied: number
+    hot_now: number
+    calls_booked: number
+    won: number
+    pending_approvals: number
+    ai_cost_usd: number
+    templates_sent: number
+    ai_replies: number
+  }
+  funnel: { stage: string; n: number }[]
+  by_channel: { channel: ChannelId; prospects: number; hot: number }[]
+  daily: { day: string; inbound: number; outbound: number }[]
+  ai_cost_by_feature: { feature: string; usd: number }[]
+  hot_list: { id: string; full_name: string | null; company: string | null; product: string | null; closing_step: ClosingStep | null; conversation_id: string | null }[]
+  recent_alerts: { kind: string; title: string; created_at: string; link_path: string | null }[]
+}
+
+export interface AlertSettings {
+  email: string | null
+  events: { hot: boolean; approval: boolean; escalation: boolean; won: boolean }
+  telegram_username: string | null
+  telegram_linked: boolean
+}

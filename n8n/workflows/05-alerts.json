@@ -1,0 +1,275 @@
+{
+  "name": "05 · Alertes (Telegram + e-mail, immédiat)",
+  "nodes": [
+    {
+      "id": "a1",
+      "name": "Webhook Supabase (nouvelle alerte)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "closer-alerts",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closer/alerts",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "a2",
+      "name": "Filtrer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Webhook de base de données Supabase (INSERT sur alerts).\nconst { headers, body } = $input.first().json;\nif (headers['x-closer-secret'] !== $env.CLOSER_WEBHOOK_SECRET) {\n  throw new Error('Secret du webhook Supabase invalide');\n}\nif (body.table !== 'alerts' || body.type !== 'INSERT') return [];\nreturn [{ json: { alert_id: body.record.id } }];\n"
+      }
+    },
+    {
+      "id": "a3",
+      "name": "Supabase · alert_delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/alert_delivery",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_alert: $json.alert_id }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "a4",
+      "name": "Mettre en forme",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Texte de l'alerte + lien direct vers la plateforme. Rien à envoyer → aucune sortie.\nconst d = $input.first().json;\nif (!d || !d.title) return [];\nconst url = ($env.APP_URL || '').replace(/\\/$/, '') + (d.link_path || '/');\nreturn [{ json: { ...d, url, text: `${d.title}\\n${d.body}\\n\\n${url}` } }];\n"
+      }
+    },
+    {
+      "id": "a5",
+      "name": "Telegram ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a5c",
+              "leftValue": "={{ $json.telegram_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a6",
+      "name": "Envoyer sur Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1000,
+        40
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      }
+    },
+    {
+      "id": "a7",
+      "name": "E-mail ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a7c",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a8",
+      "name": "Envoyer l'e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1000,
+        280
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.ALERT_FROM_EMAIL }}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.title }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "a9",
+      "name": "Supabase · mark_alert_sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/mark_alert_sent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_alert: $json.alert_id, p_delivery: { telegram: !!$json.telegram_chat_id, email: !!$json.email } }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Supabase (nouvelle alerte)": {
+      "main": [
+        [
+          {
+            "node": "Filtrer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer": {
+      "main": [
+        [
+          {
+            "node": "Supabase · alert_delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase · alert_delivery": {
+      "main": [
+        [
+          {
+            "node": "Mettre en forme",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mettre en forme": {
+      "main": [
+        [
+          {
+            "node": "Telegram ?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "E-mail ?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase · mark_alert_sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram ?": {
+      "main": [
+        [
+          {
+            "node": "Envoyer sur Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "E-mail ?": {
+      "main": [
+        [
+          {
+            "node": "Envoyer l'e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Douala"
+  },
+  "pinData": {}
+}

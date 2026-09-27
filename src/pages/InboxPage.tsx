@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import ChannelBadge from '../components/ChannelBadge'
 import ClosingBar from '../components/ClosingBar'
 import DraftPanel from '../components/DraftPanel'
@@ -27,8 +27,10 @@ const STATUS_ICON: Record<string, string> = {
 }
 
 export default function InboxPage() {
+  // ?c=<id> : ouverture directe depuis une alerte Telegram / e-mail ou le tableau de bord.
+  const [params] = useSearchParams()
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(params.get('c'))
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
