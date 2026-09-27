@@ -450,7 +450,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .plan-price { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .plan-features { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; font-size: .88rem; }
 .plan-features li { padding-left: 22px; position: relative; }
-.plan-features li::before { content: '✓'; position: absolute; left: 0; color: var(--brand-green); font-weight: 700; }
+.plan-features li::before { content: '\2713'; position: absolute; left: 0; color: var(--brand-green); font-weight: 700; }
 
 .pay-box { border-color: var(--brand); }
 .pay-box h2 { flex-wrap: wrap; }
