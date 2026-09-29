@@ -28,6 +28,17 @@ docker compose up -d --build
 
 Les migrations de base de données s'appliquent automatiquement au démarrage de l'API.
 
+## Mettre le site en ligne (Vercel, gratuit)
+
+Le site public (accueil, tarifs, CGV, confidentialité, mentions légales, contact) est une page statique : il peut être en ligne avant l'API. C'est l'adresse à donner à Stripe.
+
+1. Se connecter sur [vercel.com](https://vercel.com) avec son compte GitHub.
+2. **Add New → Project**, importer ce dépôt.
+3. **Root Directory** : `web`. Laisser le reste par défaut, puis **Deploy**.
+4. Le site est en ligne sur `https://<nom-du-projet>.vercel.app` (nom de domaine personnalisé possible ensuite, par exemple `numera.cm`).
+
+Avant de donner l'adresse à Stripe, renseigner les informations de l'éditeur dans `web/src/lib/brand.ts` (bloc `COMPANY`) : raison sociale, adresse et contact doivent correspondre au compte Stripe. Quand l'API sera hébergée, ajouter dans Vercel la variable `NEXT_PUBLIC_API_URL` et redéployer pour activer la connexion et l'inscription.
+
 ## Démarrage en développement
 
 Prérequis : Node.js 20 ou plus, PostgreSQL 16.

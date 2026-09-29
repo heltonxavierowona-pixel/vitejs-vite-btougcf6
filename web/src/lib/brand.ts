@@ -9,6 +9,49 @@
  * ============================================================
  */
 
+/** Informations légales de l'éditeur (champs libres, vides autorisés). */
+export interface CompanyInfo {
+  legalName: string;
+  legalForm: string;
+  registration: string;
+  address: string;
+  city: string;
+  country: string;
+  email: string;
+  phone: string;
+  publisher: string;
+  host: string;
+}
+
+/**
+ * ==========================================================
+ *  ÉDITEUR DU SITE — affiché sur les pages publiques
+ *  (mentions légales, CGV, contact).
+ *
+ *  ⚠️ À RENSEIGNER avant la mise en ligne : Stripe vérifie que
+ *  ces informations correspondent à celles de votre compte.
+ *  Une valeur vide masque la ligne correspondante.
+ * ==========================================================
+ */
+const COMPANY: CompanyInfo = {
+  /** Raison sociale ou nom de l'entrepreneur. */
+  legalName: 'Numera',
+  /** Forme juridique : SARL, SAS, entreprise individuelle… */
+  legalForm: '',
+  /** N° d'immatriculation (RCCM, SIREN…). */
+  registration: '',
+  /** Adresse du siège. */
+  address: '',
+  city: 'Douala',
+  country: 'Cameroun',
+  email: 'contact@numera.cm',
+  phone: '',
+  /** Responsable de la publication. */
+  publisher: '',
+  /** Hébergeur du site (nom et adresse). */
+  host: 'Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, États-Unis',
+};
+
 export const brand = {
   name: 'Numera',
 
@@ -48,4 +91,6 @@ export const brand = {
     documentFooter:
       'Document généré par Numera — Solutions comptables & TVA',
   },
+
+  company: COMPANY,
 } as const;

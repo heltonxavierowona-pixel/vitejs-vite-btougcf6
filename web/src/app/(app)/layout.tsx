@@ -43,7 +43,7 @@ export default function AppLayout({
       <header className="bg-paper border-b border-line sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <Link
-            href="/"
+            href="/espace"
             className="flex items-center gap-3 min-w-0"
             aria-label="Accueil"
           >
@@ -113,7 +113,7 @@ export default function AppLayout({
           <Tabs
             items={[{ href: '/abonnement', label: 'Abonnement' }]}
             pathname={pathname}
-            back={{ href: '/', label: 'Mon entreprise' }}
+            back={{ href: '/espace', label: 'Mon entreprise' }}
           />
         )}
       </header>

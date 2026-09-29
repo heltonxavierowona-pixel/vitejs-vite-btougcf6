@@ -1,5 +1,11 @@
 # Journal des corrections
 
+## Site public
+
+- Page d'accueil vitrine (présentation, fonctionnalités, tarifs, questions fréquentes), servie en HTML statique ; un utilisateur connecté est envoyé directement dans son espace (`/espace`).
+- Pages conditions générales de vente (dont résiliation et remboursement), confidentialité, mentions légales et contact, exigées par Stripe pour vérifier l'activité.
+- Informations de l'éditeur centralisées dans `web/src/lib/brand.ts` ; tarifs affichés vérifiés par un test contre les tarifs facturés.
+
 ## Paiement par carte avec Stripe
 
 - Abonnement mensuel par carte via **Stripe Checkout**, renouvelé automatiquement ; Flutterwave reste disponible pour le Mobile Money.

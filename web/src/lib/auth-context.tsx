@@ -102,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
       applySession(data);
-      router.push('/');
+      router.push('/espace');
     },
     [applySession, router],
   );
@@ -116,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (payload: Record<string, unknown>) => {
       const data = await api.post<AuthResponse>('/auth/register', payload);
       applySession(data);
-      router.push('/');
+      router.push('/espace');
     },
     [applySession, router],
   );
@@ -139,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (organizationId: string) => {
       setCurrentId(organizationId);
       saveOrg(organizationId);
-      router.push('/');
+      router.push('/espace');
     },
     [router],
   );
