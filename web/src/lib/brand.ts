@@ -42,10 +42,10 @@ const COMPANY: CompanyInfo = {
   registration: '',
   /** Adresse du siège. */
   address: '',
-  city: 'Douala',
+  city: 'Yaoundé',
   country: 'Cameroun',
-  email: 'contact@numera.cm',
-  phone: '',
+  email: 'heltonxavierowona@gmail.com',
+  phone: '+237 656 56 67 62',
   /** Responsable de la publication. */
   publisher: '',
   /** Hébergeur du site (nom et adresse). */

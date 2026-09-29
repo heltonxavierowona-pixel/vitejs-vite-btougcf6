@@ -9,5 +9,5 @@ export const BRAND = {
   documentFooter:
     'Document généré par Numera — Solutions comptables & TVA. ' +
     'Le dépôt officiel doit être effectué sur le portail de la DGI.',
-  supportEmail: process.env.SUPPORT_EMAIL ?? 'contact@numera.cm',
+  supportEmail: process.env.SUPPORT_EMAIL ?? 'heltonxavierowona@gmail.com',
 } as const;
