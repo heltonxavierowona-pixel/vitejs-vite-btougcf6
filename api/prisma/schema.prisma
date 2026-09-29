@@ -634,6 +634,13 @@ model Subscription {
   remindersSent Int @default(0)
   lastReminderAt DateTime?
 
+  // Moyen de renouvellement. Stripe (carte) renouvelle tout seul
+  // chaque mois ; Flutterwave (Mobile Money) passe par des relances.
+  provider             PaymentProvider?
+  stripeCustomerId     String?          @unique
+  stripeSubscriptionId String?          @unique
+  cancelAtPeriodEnd    Boolean          @default(false)
+
   payments Payment[]
 
   createdAt DateTime @default(now())
@@ -645,6 +652,7 @@ model Subscription {
 
 enum PaymentProvider {
   FLUTTERWAVE
+  STRIPE
   MANUAL
 }
 

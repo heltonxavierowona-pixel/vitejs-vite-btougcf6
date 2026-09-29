@@ -1,5 +1,17 @@
 # Journal des corrections
 
+## Paiement par carte avec Stripe
+
+- Abonnement mensuel par carte via **Stripe Checkout**, renouvelé automatiquement ; Flutterwave reste disponible pour le Mobile Money.
+- Webhooks signés et idempotents : activation, renouvellement mensuel, échec de prélèvement (impayé et période de grâce), résiliation.
+- Retour navigateur vérifié auprès de Stripe ; une session d'une autre organisation est refusée.
+- Changement de formule : nouvel abonnement sur le même client Stripe, ancien arrêté au prorata.
+- Résiliation en fin de période, reprise possible, portail client Stripe (carte, factures).
+- Relances Mobile Money désactivées pour les abonnements par carte ; filet de sécurité si un webhook est perdu.
+- Tests : faux serveur Stripe, 28 vérifications de bout en bout et 8 parcours navigateur.
+
+## Fusion initiale
+
 Fusion des deux archives d'origine (SaaS de facturation, jamais exécuté, et kit de marque Numera) en un seul produit, puis correction et vérification de bout en bout.
 
 ## Erreurs de calcul fiscal

@@ -26,6 +26,9 @@ function assertEnvironment() {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
+    // Corps brut conservé : la signature des webhooks Stripe se
+    // vérifie octet par octet, avant toute interprétation JSON.
+    rawBody: true,
   });
 
   // ConfigModule a chargé .env à ce stade : on peut vérifier.

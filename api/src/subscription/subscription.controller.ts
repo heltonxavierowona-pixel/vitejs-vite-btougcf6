@@ -1,20 +1,34 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
   Get,
   Headers,
   HttpCode,
+  Logger,
   Param,
+  RawBodyRequest,
+  Req,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { PlanCode } from '@prisma/client';
-import { IsEnum, IsString, Matches, MaxLength } from 'class-validator';
+import { PaymentProvider, PlanCode } from '@prisma/client';
+import {
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { SkipThrottle } from '@nestjs/throttler';
+import { Request } from 'express';
+import Stripe from 'stripe';
 
 import { SubscriptionService } from './subscription.service';
+import { StripeBillingService } from './stripe-billing.service';
 import { FlutterwaveService } from './flutterwave.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, AuthUser } from '../auth/auth.guard';
@@ -23,6 +37,21 @@ import { CurrentUser } from '../auth/context.decorator';
 class SelectPlanDto {
   @IsEnum(PlanCode)
   plan: PlanCode;
+}
+
+class CheckoutDto extends SelectPlanDto {
+  /** Carte (Stripe) ou Mobile Money (Flutterwave). */
+  @IsOptional()
+  @IsIn([PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
+  provider?: PaymentProvider;
+}
+
+class ConfirmStripeDto {
+  @IsString()
+  @Matches(/^cs_(test|live)_[A-Za-z0-9]{10,200}$/, {
+    message: 'Session de paiement invalide',
+  })
+  sessionId: string;
 }
 
 class ConfirmDto {
@@ -40,6 +69,7 @@ class ConfirmDto {
 export class SubscriptionController {
   constructor(
     private readonly subscriptions: SubscriptionService,
+    private readonly stripeBilling: StripeBillingService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -65,14 +95,48 @@ export class SubscriptionController {
   async checkout(
     @CurrentUser() user: AuthUser,
     @Param('organizationId') organizationId: string,
-    @Body() dto: SelectPlanDto,
+    @Body() dto: CheckoutDto,
   ) {
     await this.assertOwner(user.id, organizationId);
     return this.subscriptions.initiateCheckout(
       organizationId,
       dto.plan,
       user.email,
+      dto.provider,
     );
+  }
+
+  /** Retour navigateur après un paiement Stripe. */
+  @Post('confirm-stripe')
+  @HttpCode(200)
+  async confirmStripe(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+    @Body() dto: ConfirmStripeDto,
+  ) {
+    await this.assertMember(user.id, organizationId);
+    return this.stripeBilling.confirmSession(dto.sessionId, organizationId);
+  }
+
+  /** Portail Stripe : carte bancaire, factures, résiliation. */
+  @Post('portal')
+  @HttpCode(200)
+  async portal(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+  ) {
+    await this.assertOwner(user.id, organizationId);
+    return this.stripeBilling.portal(organizationId);
+  }
+
+  @Post('resume')
+  @HttpCode(200)
+  async resume(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+  ) {
+    await this.assertOwner(user.id, organizationId);
+    return this.subscriptions.resume(organizationId);
   }
 
   @Post('trial')
@@ -102,6 +166,7 @@ export class SubscriptionController {
   }
 
   @Post('cancel')
+  @HttpCode(200)
   async cancel(
     @CurrentUser() user: AuthUser,
     @Param('organizationId') organizationId: string,
@@ -207,5 +272,40 @@ export class FlutterwaveWebhookController {
     }
 
     return { received: true };
+  }
+}
+
+/**
+ * Webhook Stripe — non authentifié par JWT, protégé par la
+ * signature Stripe calculée sur le corps BRUT de la requête
+ * (d'où `rawBody: true` dans main.ts).
+ */
+@Controller('webhooks/stripe')
+@SkipThrottle()
+export class StripeWebhookController {
+  private readonly logger = new Logger(StripeWebhookController.name);
+
+  constructor(private readonly stripeBilling: StripeBillingService) {}
+
+  @Post()
+  @HttpCode(200)
+  async handle(
+    @Req() request: RawBodyRequest<Request>,
+    @Headers('stripe-signature') signature: string | undefined,
+  ) {
+    if (!request.rawBody) {
+      throw new BadRequestException('Corps de requête absent');
+    }
+    try {
+      return await this.stripeBilling.handleWebhook(request.rawBody, signature);
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeSignatureVerificationError) {
+        throw new BadRequestException('Signature Stripe invalide');
+      }
+      this.logger.error(
+        `Webhook Stripe en échec : ${error instanceof Error ? error.message : error}`,
+      );
+      throw error;
+    }
   }
 }

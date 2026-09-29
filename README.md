@@ -55,9 +55,10 @@ npm run dev
 
 | Commande | Rôle |
 |---|---|
-| `cd api && npm test` | Tests unitaires : moteur de TVA, échéances, montant en lettres, parité API ↔ front |
+| `cd api && npm test` | Tests unitaires : moteur de TVA, échéances, montant en lettres, parité API ↔ front, conversions Stripe |
 | `cd api && npm run lint` | Vérification des types de l'API |
 | `cd api && API_URL=http://localhost:3000/api npm run smoke` | 50 vérifications de bout en bout sur une API démarrée : facturation, avoirs, TVA, dépôt, PDF, isolation entre comptes, jetons |
+| `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 
 ---
@@ -73,8 +74,25 @@ npm run dev
 - **Déclaration de TVA mensuelle** : calcul automatique depuis les factures validées, report du crédit, déclaration néant, alerte si des factures ont changé depuis le calcul, enregistrement du dépôt et du paiement.
 - **PDF** des factures (montant en toutes lettres, ventilation de la TVA, filigrane « BROUILLON ») et des déclarations.
 - **Tableau de bord cabinet** : portefeuille trié par urgence, dossiers bloqués par des brouillons, majorations de retard estimées, charge par collaborateur.
-- **Abonnements** payés par Flutterwave (Mobile Money ou carte), avec relances et période de grâce.
+- **Abonnements** payés par carte bancaire (**Stripe**, renouvellement automatique, portail client) ou par Mobile Money (**Flutterwave**, avec relances), période de grâce en cas d'impayé.
 - **Journal d'audit** de toutes les opérations.
+
+## Paiement par carte (Stripe)
+
+Les abonnements par carte passent par **Stripe Checkout** : la carte est saisie sur la page hébergée par Stripe, jamais sur Numera. Stripe prélève ensuite chaque mois automatiquement. Aucun produit n'est à créer dans Stripe : les prix sont envoyés à chaque paiement depuis `api/src/subscription/plans.ts`, en FCFA (XAF), et Stripe convertit vers la devise de versement du compte.
+
+**Connecter un compte Stripe**
+
+1. Dans le tableau de bord Stripe, rubrique **Développeurs → Clés API**, copier la clé secrète dans `STRIPE_SECRET_KEY` (`sk_test_…` pour tester, `sk_live_…` en production). Ne la collez jamais dans le code ni dans une discussion.
+2. Rubrique **Développeurs → Webhooks**, ajouter le point de terminaison `https://<adresse-publique-de-l-api>/api/webhooks/stripe` avec ces événements :
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`.
+   Copier son **secret de signature** (`whsec_…`) dans `STRIPE_WEBHOOK_SECRET`.
+3. Rubrique **Paramètres → Facturation → Portail client**, activer le portail (mise à jour de la carte, factures, résiliation).
+4. Redémarrer l'API : le bouton « Payer par carte » apparaît sur la page Abonnement.
+
+En local, `stripe listen --forward-to localhost:3000/api/webhooks/stripe` (CLI Stripe) relaie les webhooks et affiche le secret à utiliser.
+
+**Tester sans compte Stripe** : `api/scripts/fake-stripe-server.py` simule l'API Stripe, et `api/scripts/stripe-flow-test.js` rejoue tout le cycle (paiement, renouvellement, impayé, résiliation, changement de formule) avec des webhooks signés. Mode d'emploi en tête du script.
 
 ## Marque
 
@@ -121,8 +139,9 @@ Le FCFA n'a pas de sous-unité : les centimes servent uniquement à la précisio
    - glissement ou non de l'échéance du 15 si c'est un jour non ouvré ;
    - format du cachet fiscal / QR code de la facture normalisée.
 2. **Vérifier Flutterwave** : couverture réelle MTN MoMo et Orange Money au Cameroun, frais par transaction, paiement récurrent.
-3. **Choisir le canal de notification** : `api/src/subscription/subscription-cron.service.ts` contient deux méthodes `dispatch*` qui ne font que journaliser (WhatsApp, SMS ou e-mail).
-4. **Servir l'API et le front en HTTPS**, derrière un reverse proxy (ajuster `TRUST_PROXY_HOPS`).
+3. **Faire un paiement Stripe de test** (clé `sk_test_…`, carte `4242 4242 4242 4242`) avant de passer aux clés réelles, et vérifier dans Stripe que les webhooks arrivent bien (statut 200).
+4. **Choisir le canal de notification** : `api/src/subscription/subscription-cron.service.ts` contient deux méthodes `dispatch*` qui ne font que journaliser (WhatsApp, SMS ou e-mail).
+5. **Servir l'API et le front en HTTPS**, derrière un reverse proxy (ajuster `TRUST_PROXY_HOPS`).
 
 ## Reste à construire
 

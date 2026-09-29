@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { DeclarationStatus, SubscriptionStatus } from '@prisma/client';
+import {
+  DeclarationStatus,
+  PaymentProvider,
+  Prisma,
+  SubscriptionStatus,
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { GRACE_PERIOD_DAYS } from './plans';
@@ -40,6 +45,15 @@ export class SubscriptionCronService {
   async runDunning() {
     const now = new Date();
     const in3Days = new Date(now.getTime() + 3 * 86_400_000);
+    const threeDaysAgo = new Date(now.getTime() - 3 * 86_400_000);
+
+    // Les abonnements par carte (Stripe) se renouvellent tout seuls :
+    // pas de relance, et on ne les déclare impayés que si aucune
+    // confirmation n'est arrivée 3 jours après l'échéance (webhook
+    // perdu, par exemple).
+    const notStripe: Prisma.SubscriptionWhereInput = {
+      OR: [{ provider: null }, { provider: { not: PaymentProvider.STRIPE } }],
+    };
 
     // --- a) Échéance proche : prévenir avant expiration ---
     const expiringSoon = await this.prisma.subscription.findMany({
@@ -47,6 +61,7 @@ export class SubscriptionCronService {
         status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING] },
         currentPeriodEnd: { gt: now, lte: in3Days },
         priceAmount: { gt: 0 },
+        ...notStripe,
       },
       include: { organization: true },
     });
@@ -59,8 +74,11 @@ export class SubscriptionCronService {
     const justExpired = await this.prisma.subscription.findMany({
       where: {
         status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING] },
-        currentPeriodEnd: { lte: now },
         priceAmount: { gt: 0 },
+        OR: [
+          { currentPeriodEnd: { lte: now }, ...notStripe },
+          { currentPeriodEnd: { lte: threeDaysAgo }, provider: PaymentProvider.STRIPE },
+        ],
       },
       include: { organization: true },
     });

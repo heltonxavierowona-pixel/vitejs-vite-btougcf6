@@ -6,14 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  OrganizationType,
+  PaymentProvider,
   PaymentStatus,
   PlanCode,
   SubscriptionStatus,
 } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { StripeBillingService } from './stripe-billing.service';
 import { PLANS, UNLIMITED, plansFor } from './plans';
 import { canUseSubscription, SUBSCRIPTION_BLOCKED_MESSAGE } from './access';
 
@@ -24,7 +26,16 @@ export class SubscriptionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly flutterwave: FlutterwaveService,
+    private readonly stripeBilling: StripeBillingService,
   ) {}
+
+  /** Moyens de paiement configurés sur ce serveur. */
+  paymentProviders(): PaymentProvider[] {
+    return [
+      ...(this.stripeBilling.isEnabled ? [PaymentProvider.STRIPE] : []),
+      ...(process.env.FLUTTERWAVE_SECRET_KEY ? [PaymentProvider.FLUTTERWAVE] : []),
+    ];
+  }
 
   // ----------------------------------------------------------
   //  Consultation
@@ -38,11 +49,14 @@ export class SubscriptionService {
     });
     if (!organization) throw new NotFoundException('Organisation introuvable');
 
-    return plansFor(organization.type).map((plan) => ({
-      ...plan,
-      maxEntities: plan.maxEntities === UNLIMITED ? null : plan.maxEntities,
-      maxUsers: plan.maxUsers === UNLIMITED ? null : plan.maxUsers,
-    }));
+    return {
+      providers: this.paymentProviders(),
+      plans: plansFor(organization.type).map((plan) => ({
+        ...plan,
+        maxEntities: plan.maxEntities === UNLIMITED ? null : plan.maxEntities,
+        maxUsers: plan.maxUsers === UNLIMITED ? null : plan.maxUsers,
+      })),
+    };
   }
 
   async current(organizationId: string) {
@@ -103,6 +117,7 @@ export class SubscriptionService {
     organizationId: string,
     planCode: PlanCode,
     userEmail: string,
+    provider: PaymentProvider = PaymentProvider.FLUTTERWAVE,
   ) {
     const organization = await this.prisma.organization.findUnique({
       where: { id: organizationId },
@@ -131,8 +146,45 @@ export class SubscriptionService {
       );
     }
 
+    const current = organization.subscription;
+    const paysByCard =
+      current?.provider === PaymentProvider.STRIPE &&
+      !!current.stripeSubscriptionId &&
+      current.status !== SubscriptionStatus.CANCELLED;
+
+    // Un abonnement par carte se renouvelle tout seul : passer au
+    // gratuit ou au Mobile Money exige d'abord de le résilier, sinon
+    // la carte continuerait d'être débitée.
+    if (paysByCard && (plan.priceMonthly === 0 || provider !== PaymentProvider.STRIPE)) {
+      throw new BadRequestException(
+        'Votre abonnement est payé par carte et se renouvelle automatiquement. ' +
+          'Résiliez-le d’abord, ou changez de formule en payant par carte.',
+      );
+    }
+    if (paysByCard && current.plan === planCode && !current.cancelAtPeriodEnd) {
+      throw new BadRequestException(
+        'Cette formule est déjà active et se renouvelle automatiquement.',
+      );
+    }
+
     if (plan.priceMonthly === 0) {
       return this.activateFreePlan(organizationId, planCode);
+    }
+
+    if (!this.paymentProviders().includes(provider)) {
+      throw new BadRequestException('Ce moyen de paiement n’est pas disponible.');
+    }
+
+    if (provider === PaymentProvider.STRIPE) {
+      return this.stripeBilling.checkout(
+        organization,
+        planCode,
+        userEmail,
+        `SUB-${organizationId.slice(0, 8)}-${Date.now().toString(36)}-${randomBytes(6).toString('hex')}`,
+        current
+          ? { stripeCustomerId: current.stripeCustomerId, subscriptionId: current.id }
+          : null,
+      );
     }
 
     const txRef = this.flutterwave.buildTxRef(organizationId);
@@ -141,6 +193,7 @@ export class SubscriptionService {
       data: {
         organizationId,
         subscriptionId: organization.subscription?.id,
+        provider: PaymentProvider.FLUTTERWAVE,
         amount: plan.priceMonthly,
         currency: 'XAF',
         txRef,
@@ -263,6 +316,8 @@ export class SubscriptionService {
       const data = {
         plan: planCode,
         status: SubscriptionStatus.ACTIVE,
+        provider: PaymentProvider.FLUTTERWAVE,
+        cancelAtPeriodEnd: false,
         maxEntities: plan.maxEntities,
         maxUsers: plan.maxUsers,
         priceAmount: plan.priceMonthly,
@@ -378,6 +433,18 @@ export class SubscriptionService {
       throw new BadRequestException('Cet abonnement est déjà résilié.');
     }
 
+    // Carte : Stripe arrête les prélèvements à la fin de la période
+    // payée ; l'abonnement reste actif jusque-là.
+    if (subscription.stripeSubscriptionId) {
+      if (subscription.cancelAtPeriodEnd) {
+        throw new BadRequestException('La résiliation est déjà programmée.');
+      }
+      return this.stripeBilling.setCancelAtPeriodEnd(
+        subscription.stripeSubscriptionId,
+        true,
+      );
+    }
+
     // L'accès reste ouvert jusqu'à la fin de la période payée
     // (voir canUseSubscription).
     return this.prisma.subscription.update({
@@ -387,6 +454,20 @@ export class SubscriptionService {
         cancelledAt: new Date(),
       },
     });
+  }
+
+  /** Annule une résiliation programmée (abonnement par carte). */
+  async resume(organizationId: string) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { organizationId },
+    });
+    if (!subscription?.stripeSubscriptionId || !subscription.cancelAtPeriodEnd) {
+      throw new BadRequestException('Aucune résiliation programmée à annuler.');
+    }
+    return this.stripeBilling.setCancelAtPeriodEnd(
+      subscription.stripeSubscriptionId,
+      false,
+    );
   }
 
   // ----------------------------------------------------------
@@ -408,6 +489,10 @@ export class SubscriptionService {
       maxUsers: plan.maxUsers,
       priceAmount: 0,
       currentPeriodEnd: periodEnd,
+      provider: null,
+      cancelAtPeriodEnd: false,
+      gracePeriodEnd: null,
+      cancelledAt: null,
     };
 
     const subscription = await this.prisma.subscription.upsert({
