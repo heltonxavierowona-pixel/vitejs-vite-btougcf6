@@ -29,6 +29,7 @@ import Stripe from 'stripe';
 
 import { SubscriptionService } from './subscription.service';
 import { StripeBillingService } from './stripe-billing.service';
+import { NotchPayService } from './notchpay.service';
 import { FlutterwaveService } from './flutterwave.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, AuthUser } from '../auth/auth.guard';
@@ -40,10 +41,16 @@ class SelectPlanDto {
 }
 
 class CheckoutDto extends SelectPlanDto {
-  /** Carte (Stripe) ou Mobile Money (Flutterwave). */
+  /** Notch Pay (Mobile Money, carte), Stripe (carte) ou Flutterwave. */
   @IsOptional()
-  @IsIn([PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
+  @IsIn([PaymentProvider.NOTCHPAY, PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
   provider?: PaymentProvider;
+}
+
+class ConfirmNotchPayDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9._-]{4,80}$/, { message: 'Référence de paiement invalide' })
+  txRef: string;
 }
 
 class ConfirmStripeDto {
@@ -104,6 +111,18 @@ export class SubscriptionController {
       user.email,
       dto.provider,
     );
+  }
+
+  /** Retour navigateur après un paiement Notch Pay. */
+  @Post('confirm-notchpay')
+  @HttpCode(200)
+  async confirmNotchPay(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+    @Body() dto: ConfirmNotchPayDto,
+  ) {
+    await this.assertMember(user.id, organizationId);
+    return this.subscriptions.confirmPayment(dto.txRef, dto.txRef, organizationId);
   }
 
   /** Retour navigateur après un paiement Stripe. */
@@ -307,5 +326,78 @@ export class StripeWebhookController {
       );
       throw error;
     }
+  }
+}
+
+/**
+ * Webhook Notch Pay — protégé par la signature HMAC calculée sur
+ * le corps brut (en-tête x-notch-signature). Le paiement est de
+ * toute façon revérifié auprès de Notch Pay avant activation.
+ */
+@Controller('webhooks/notchpay')
+@SkipThrottle()
+export class NotchPayWebhookController {
+  private readonly logger = new Logger(NotchPayWebhookController.name);
+
+  constructor(
+    private readonly subscriptions: SubscriptionService,
+    private readonly notchpay: NotchPayService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @Post()
+  @HttpCode(200)
+  async handle(
+    @Req() request: RawBodyRequest<Request>,
+    @Headers('x-notch-signature') signature?: string,
+  ) {
+    if (!request.rawBody || !this.notchpay.verifyWebhookSignature(request.rawBody, signature)) {
+      throw new ForbiddenException('Signature invalide');
+    }
+
+    const payload = request.body as {
+      id?: string;
+      type?: string;
+      event?: string;
+      data?: { reference?: string; merchant_reference?: string };
+    };
+    const externalId = String(payload?.id ?? '');
+    if (!externalId) return { received: true, ignored: true };
+
+    // Déduplication : un même événement peut être réémis.
+    const known = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId: { provider: 'NOTCHPAY', externalId } },
+    });
+    if (known?.processedAt) return { received: true, duplicate: true };
+
+    const record =
+      known ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: 'NOTCHPAY',
+          eventType: payload.type ?? payload.event ?? 'unknown',
+          externalId,
+          payload: payload as object,
+          signature,
+        },
+      }));
+
+    try {
+      await this.subscriptions.handleNotchPayEvent(payload);
+      await this.prisma.webhookEvent.update({
+        where: { id: record.id },
+        data: { processedAt: new Date(), error: null },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Webhook Notch Pay en échec : ${message}`);
+      await this.prisma.webhookEvent.update({
+        where: { id: record.id },
+        data: { error: message },
+      });
+      throw error; // Notch Pay retentera l'envoi
+    }
+
+    return { received: true };
   }
 }

@@ -15,6 +15,7 @@ import { randomBytes } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { NotchPayService } from './notchpay.service';
 import { StripeBillingService } from './stripe-billing.service';
 import { PLANS, UNLIMITED, plansFor } from './plans';
 import { canUseSubscription, SUBSCRIPTION_BLOCKED_MESSAGE } from './access';
@@ -27,11 +28,13 @@ export class SubscriptionService {
     private readonly prisma: PrismaService,
     private readonly flutterwave: FlutterwaveService,
     private readonly stripeBilling: StripeBillingService,
+    private readonly notchpay: NotchPayService,
   ) {}
 
   /** Moyens de paiement configurés sur ce serveur. */
   paymentProviders(): PaymentProvider[] {
     return [
+      ...(this.notchpay.isEnabled ? [PaymentProvider.NOTCHPAY] : []),
       ...(this.stripeBilling.isEnabled ? [PaymentProvider.STRIPE] : []),
       ...(process.env.FLUTTERWAVE_SECRET_KEY ? [PaymentProvider.FLUTTERWAVE] : []),
     ];
@@ -117,8 +120,14 @@ export class SubscriptionService {
     organizationId: string,
     planCode: PlanCode,
     userEmail: string,
-    provider: PaymentProvider = PaymentProvider.FLUTTERWAVE,
+    requestedProvider?: PaymentProvider,
   ) {
+    // Sans précision : premier moyen de paiement configuré
+    // (Notch Pay en priorité).
+    const provider =
+      requestedProvider ??
+      this.paymentProviders().find((p) => p !== PaymentProvider.STRIPE) ??
+      PaymentProvider.FLUTTERWAVE;
     const organization = await this.prisma.organization.findUnique({
       where: { id: organizationId },
       include: { subscription: true },
@@ -187,6 +196,10 @@ export class SubscriptionService {
       );
     }
 
+    if (provider === PaymentProvider.NOTCHPAY) {
+      return this.checkoutNotchPay(organization, planCode, userEmail);
+    }
+
     const txRef = this.flutterwave.buildTxRef(organizationId);
 
     const payment = await this.prisma.payment.create({
@@ -241,15 +254,27 @@ export class SubscriptionService {
       return { success: true, alreadyProcessed: true, paymentId: payment.id };
     }
 
-    // On ne fait jamais confiance au webhook seul.
-    const verification = await this.flutterwave.verifyPayment(providerTxId);
+    // On ne fait jamais confiance au webhook seul : la transaction
+    // est relue chez le prestataire du paiement.
+    const isNotchPay = payment.provider === PaymentProvider.NOTCHPAY;
+    const verification = isNotchPay
+      ? await this.notchpay.verifyPayment(payment.providerTxId ?? txRef)
+      : await this.flutterwave.verifyPayment(providerTxId);
 
     // La transaction vérifiée doit être CELLE de ce paiement :
     // sinon un seul paiement réussi pourrait être rejoué pour
     // activer n'importe quel autre abonnement.
+    const sameTransaction =
+      verification.txRef === txRef ||
+      (isNotchPay &&
+        !!payment.providerTxId &&
+        verification.providerTxId === payment.providerTxId);
+
     const failure = !verification.isSuccessful
-      ? 'Transaction non aboutie'
-      : verification.txRef !== txRef
+      ? verification.isFailed
+        ? 'Le paiement a été refusé ou annulé.'
+        : 'Paiement en attente de confirmation. Validez-le sur votre téléphone, puis réessayez.'
+      : !sameTransaction
         ? 'La transaction ne correspond pas à ce paiement'
         : verification.currency !== 'XAF'
           ? 'Devise inattendue'
@@ -257,24 +282,29 @@ export class SubscriptionService {
             ? 'Montant inférieur au montant attendu'
             : null;
 
+    // La formule choisie est conservée quoi qu'il arrive : la réponse
+    // du prestataire est rangée à côté, jamais à sa place.
+    const planCode = (payment.providerRaw as any)?.planCode as PlanCode;
+    const rawWithPlan = { planCode, provider: verification.raw } as any;
+
     if (failure) {
-      this.logger.warn(`Paiement ${txRef} refusé : ${failure}`);
-      // Seul un échec réel chez le fournisseur clôt le paiement ;
-      // une tentative frauduleuse ne doit pas bloquer le vrai.
-      if (!verification.isSuccessful && verification.txRef === txRef) {
+      this.logger.warn(`Paiement ${txRef} non confirmé : ${failure}`);
+      // Seul un échec DÉFINITIF de CETTE transaction clôt le paiement :
+      // ni une attente, ni une tentative frauduleuse ne doivent
+      // bloquer le vrai paiement.
+      if (verification.isFailed && sameTransaction) {
         await this.prisma.payment.updateMany({
           where: { id: payment.id, status: PaymentStatus.PENDING },
           data: {
             status: PaymentStatus.FAILED,
             failureReason: failure,
-            providerRaw: verification.raw as any,
+            providerRaw: rawWithPlan,
           },
         });
       }
       return { success: false, reason: failure };
     }
 
-    const planCode = (payment.providerRaw as any)?.planCode as PlanCode;
     const plan = PLANS[planCode];
     if (!plan) {
       throw new BadRequestException('Plan du paiement introuvable');
@@ -290,7 +320,7 @@ export class SubscriptionService {
           providerTxId: verification.providerTxId,
           method: this.mapMethod(verification.method),
           paidAt: new Date(),
-          providerRaw: verification.raw as any,
+          providerRaw: rawWithPlan,
         },
       });
       if (claimed.count === 0) return null;
@@ -316,7 +346,7 @@ export class SubscriptionService {
       const data = {
         plan: planCode,
         status: SubscriptionStatus.ACTIVE,
-        provider: PaymentProvider.FLUTTERWAVE,
+        provider: payment.provider,
         cancelAtPeriodEnd: false,
         maxEntities: plan.maxEntities,
         maxUsers: plan.maxUsers,
@@ -340,6 +370,85 @@ export class SubscriptionService {
       return { success: true, alreadyProcessed: true, paymentId: payment.id };
     }
     return { success: true, subscription: result };
+  }
+
+  /** Paiement Notch Pay : Mobile Money (MTN, Orange) ou carte. */
+  private async checkoutNotchPay(
+    organization: {
+      id: string;
+      name: string;
+      billingEmail: string;
+      billingPhone: string;
+      subscription: { id: string } | null;
+    },
+    planCode: PlanCode,
+    userEmail: string,
+  ) {
+    const plan = PLANS[planCode];
+    const txRef = this.notchpay.buildTxRef(organization.id);
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        organizationId: organization.id,
+        subscriptionId: organization.subscription?.id,
+        provider: PaymentProvider.NOTCHPAY,
+        amount: plan.priceMonthly,
+        currency: 'XAF',
+        txRef,
+        status: PaymentStatus.PENDING,
+        providerRaw: { planCode },
+      },
+    });
+
+    const frontend = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const { paymentUrl, providerRef } = await this.notchpay.initPayment({
+      txRef,
+      amount: plan.priceMonthly,
+      customerEmail: organization.billingEmail || userEmail,
+      customerPhone: organization.billingPhone,
+      customerName: organization.name,
+      description: this.notchpay.describe(plan.label),
+      // Notch Pay ajoute ses propres paramètres à cette adresse.
+      redirectUrl: `${frontend}/abonnement/retour?provider=notchpay&ref=${encodeURIComponent(txRef)}`,
+    });
+
+    // Référence Notch Pay conservée : elle sert à la vérification.
+    if (providerRef) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { providerTxId: providerRef },
+      });
+    }
+
+    return { paymentId: payment.id, txRef, paymentUrl, plan };
+  }
+
+  /**
+   * Webhook Notch Pay : retrouve le paiement concerné puis le
+   * confirme par une relecture serveur (confirmPayment).
+   */
+  async handleNotchPayEvent(event: {
+    type?: string;
+    event?: string;
+    data?: { reference?: string; merchant_reference?: string };
+  }) {
+    const type = event.type ?? event.event ?? '';
+    if (!type.startsWith('payment.')) return { ignored: true };
+
+    const reference = event.data?.reference;
+    const merchantRef = event.data?.merchant_reference;
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        provider: PaymentProvider.NOTCHPAY,
+        OR: [
+          ...(reference ? [{ providerTxId: reference }, { txRef: reference }] : []),
+          ...(merchantRef ? [{ txRef: merchantRef }] : []),
+        ],
+      },
+    });
+    if (!payment) return { ignored: true };
+
+    return this.confirmPayment(payment.txRef, payment.providerTxId ?? payment.txRef);
   }
 
   // ----------------------------------------------------------

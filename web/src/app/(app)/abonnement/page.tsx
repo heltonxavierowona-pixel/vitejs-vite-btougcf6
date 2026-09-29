@@ -16,7 +16,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 
-type Provider = 'STRIPE' | 'FLUTTERWAVE';
+type Provider = 'NOTCHPAY' | 'STRIPE' | 'FLUTTERWAVE';
 
 interface Plan {
   code: string;
@@ -49,6 +49,13 @@ interface Subscription {
   };
 }
 
+/** Libellé du bouton de paiement, par prestataire. */
+const payLabel: Record<Provider, string> = {
+  NOTCHPAY: '(Mobile Money ou carte)',
+  STRIPE: 'par carte',
+  FLUTTERWAVE: 'par Mobile Money',
+};
+
 const statusLabel: Record<string, string> = {
   TRIALING: 'Période d’essai',
   ACTIVE: 'Actif',
@@ -58,6 +65,7 @@ const statusLabel: Record<string, string> = {
 };
 
 const providerLabel: Record<Provider, string> = {
+  NOTCHPAY: 'Notch Pay',
   STRIPE: 'Carte bancaire',
   FLUTTERWAVE: 'Mobile Money',
 };
@@ -122,7 +130,7 @@ function SubscriptionView() {
       });
       if (result.paymentUrl) {
         // On ne manipule jamais les identifiants de carte ou de
-        // Mobile Money : tout se passe chez Stripe ou Flutterwave.
+        // Mobile Money : tout se passe chez le prestataire de paiement.
         window.location.href = result.paymentUrl;
         return;
       }
@@ -346,15 +354,13 @@ function SubscriptionView() {
                       .map((provider) => (
                         <Button
                           key={provider}
-                          variant={provider === 'STRIPE' ? 'primary' : 'secondary'}
+                          variant={provider === offered[0] ? 'primary' : 'secondary'}
                           onClick={() => subscribe(plan.code, provider)}
                           disabled={busy !== null}
                         >
                           {busy === `${plan.code}-${provider}`
                             ? 'Ouverture…'
-                            : `${renewable ? 'Renouveler' : 'Payer'} par ${
-                                provider === 'STRIPE' ? 'carte' : 'Mobile Money'
-                              }`}
+                            : `${renewable ? 'Renouveler' : 'Payer'} ${payLabel[provider]}`}
                         </Button>
                       ))
                   )}
@@ -366,6 +372,8 @@ function SubscriptionView() {
       </Panel>
 
       <Alert tone="info">
+        {providers.includes('NOTCHPAY') &&
+          'Paiement sécurisé par Notch Pay : MTN Mobile Money, Orange Money ou carte bancaire. Chaque mois se paie à l’avance : aucun prélèvement automatique, un rappel vous est envoyé avant chaque échéance. '}
         {providers.includes('STRIPE') &&
           'Par carte bancaire (Visa, Mastercard) : paiement sécurisé par Stripe, renouvelé automatiquement chaque mois et résiliable à tout moment. '}
         {providers.includes('FLUTTERWAVE') &&

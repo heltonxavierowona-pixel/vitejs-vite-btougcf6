@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 
 import {
   FlutterwaveWebhookController,
+  NotchPayWebhookController,
   StripeWebhookController,
   SubscriptionController,
 } from './subscription.controller';
 import { StripeService } from './stripe.service';
+import { NotchPayService } from './notchpay.service';
 import { CronController } from './cron.controller';
 import { StripeBillingService } from './stripe-billing.service';
 import { SubscriptionService } from './subscription.service';
@@ -16,6 +18,7 @@ import { SubscriptionCronService } from './subscription-cron.service';
   controllers: [
     SubscriptionController,
     FlutterwaveWebhookController,
+    NotchPayWebhookController,
     StripeWebhookController,
     CronController,
   ],
@@ -24,6 +27,7 @@ import { SubscriptionCronService } from './subscription-cron.service';
     FlutterwaveService,
     StripeService,
     StripeBillingService,
+    NotchPayService,
     SubscriptionCronService,
   ],
   exports: [SubscriptionService],

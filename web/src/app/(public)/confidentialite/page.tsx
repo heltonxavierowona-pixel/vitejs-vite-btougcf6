@@ -23,8 +23,8 @@ export default function PrivacyPage() {
         <li>Données techniques : adresse IP et navigateur, conservés dans le journal de sécurité.</li>
       </ul>
       <p>
-        Les données de carte bancaire et de Mobile Money sont traitées directement par Stripe et
-        Flutterwave ; {brand.name} n’y a jamais accès.
+        Les données de carte bancaire et de Mobile Money sont traitées directement par Notch Pay,
+        notre prestataire de paiement ; {brand.name} n’y a jamais accès.
       </p>
 
       <h2>Finalités</h2>
@@ -38,8 +38,8 @@ export default function PrivacyPage() {
       <h2>Destinataires</h2>
       <p>
         Les données ne sont accessibles qu’aux membres de votre organisation, selon les droits
-        que vous leur attribuez, et à nos sous-traitants techniques : hébergement, Stripe et
-        Flutterwave (paiements). Chaque dossier est strictement cloisonné des autres.
+        que vous leur attribuez, et à nos sous-traitants techniques : hébergement (Vercel, Neon)
+        et paiements (Notch Pay). Chaque dossier est strictement cloisonné des autres.
       </p>
 
       <h2>Durée de conservation</h2>

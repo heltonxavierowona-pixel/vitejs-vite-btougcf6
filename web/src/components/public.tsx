@@ -7,7 +7,7 @@ import { Logo } from '@/components/brand';
    SITE PUBLIC — en-tête, pied de page et gabarit des pages
    légales. Composants serveur : le contenu est livré en HTML,
    lisible par les moteurs de recherche et par la vérification
-   Stripe, sans exécuter de JavaScript.
+   des prestataires de paiement, sans exécuter de JavaScript.
    ============================================================ */
 
 export function PublicHeader() {
@@ -69,7 +69,7 @@ export function PublicFooter() {
       </div>
       <p className="max-w-6xl mx-auto px-4 sm:px-6 pb-8 text-xs text-inksoft">
         © {new Date().getFullYear()} {c.legalName}. Tous droits réservés. Paiements sécurisés par
-        Stripe (carte bancaire) et Flutterwave (Mobile Money).
+        Notch Pay (MTN Mobile Money, Orange Money, carte bancaire).
       </p>
     </footer>
   );

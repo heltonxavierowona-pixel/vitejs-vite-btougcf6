@@ -1,5 +1,12 @@
 # Journal des corrections
 
+## Paiement par Notch Pay
+
+- Abonnements payés par Notch Pay (MTN Mobile Money, Orange Money, carte), moyen de paiement proposé en premier.
+- Retour navigateur et webhook signé (HMAC-SHA256), toujours confirmés par une relecture de la transaction chez Notch Pay.
+- Correction : un paiement encore « en attente » au retour sur le site n'est plus marqué échoué et ne perd plus sa formule (le défaut touchait aussi Flutterwave).
+- CGV, accueil et confidentialité mis à jour ; faux serveur Notch Pay et scénario de 15 vérifications.
+
 ## Site public
 
 - Page d'accueil vitrine (présentation, fonctionnalités, tarifs, questions fréquentes), servie en HTML statique ; un utilisateur connecté est envoyé directement dans son espace (`/espace`).

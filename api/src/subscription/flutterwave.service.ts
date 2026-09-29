@@ -38,6 +38,12 @@ export interface PaymentInitResult {
 
 export interface PaymentVerification {
   isSuccessful: boolean;
+  /**
+   * Échec DÉFINITIF chez le prestataire (refusé, annulé, expiré).
+   * Un paiement simplement en attente n'est pas un échec : le client
+   * peut encore valider sur son téléphone.
+   */
+  isFailed?: boolean;
   amount: number; // centimes de FCFA
   currency: string;
   providerTxId: string;
@@ -152,6 +158,7 @@ export class FlutterwaveService {
 
     return {
       isSuccessful: data.status === 'successful',
+      isFailed: ['failed', 'cancelled'].includes(String(data.status)),
       amount: Math.round(Number(data.amount) * 100),
       currency: data.currency,
       providerTxId: String(data.id),

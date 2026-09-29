@@ -57,19 +57,20 @@ export default function TermsPage() {
       <h2>4. Paiement</h2>
       <ul>
         <li>
-          <strong>Carte bancaire</strong> (Visa, Mastercard) : le paiement est traité par Stripe.
-          Le montant de la formule est prélevé à la souscription puis automatiquement chaque mois,
-          à la date anniversaire, jusqu’à résiliation.
+          Les paiements sont traités par <strong>Notch Pay</strong>, prestataire de paiement
+          établi au Cameroun, par <strong>MTN Mobile Money</strong>, <strong>Orange Money</strong>{' '}
+          ou <strong>carte bancaire</strong>.
         </li>
         <li>
-          <strong>Mobile Money</strong> (MTN Mobile Money, Orange Money) : le paiement est traité
-          par Flutterwave. Chaque mois est payé à l’avance ; un rappel est envoyé avant l’échéance.
+          Chaque mois est payé à l’avance. Aucun prélèvement automatique n’est effectué : un
+          rappel est envoyé avant chaque échéance et l’abonnement se renouvelle par un nouveau
+          paiement.
         </li>
       </ul>
       <p>
         {brand.name} n’a jamais accès aux numéros de carte ni aux identifiants Mobile Money, saisis
-        exclusivement sur les pages sécurisées de ces prestataires. Une facture est disponible
-        pour chaque paiement.
+        exclusivement sur la page sécurisée de Notch Pay. Un reçu est disponible pour chaque
+        paiement.
       </p>
 
       <h2>5. Défaut de paiement</h2>
@@ -88,7 +89,7 @@ export default function TermsPage() {
         </li>
         <li>
           La résiliation prend effet à la <strong>fin de la période mensuelle en cours</strong>,
-          déjà payée : aucun nouveau prélèvement n’est effectué et l’accès complet est maintenu
+          déjà payée : aucun nouveau paiement n’est demandé et l’accès complet est maintenu
           jusqu’à cette date.
         </li>
         <li>
@@ -97,8 +98,9 @@ export default function TermsPage() {
           demande.
         </li>
         <li>
-          En cas de changement de formule en cours de mois par carte bancaire, le temps non
-          consommé de l’ancienne formule est déduit au prorata de la facture suivante.
+          Un changement de formule prend effet dès son paiement et ouvre une nouvelle période
+          d’un mois. Un renouvellement anticipé de la même formule s’ajoute, lui, à la période
+          en cours : aucun jour n’est perdu.
         </li>
         <li>
           Toute demande de remboursement est traitée sous 14 jours et remboursée sur le moyen de

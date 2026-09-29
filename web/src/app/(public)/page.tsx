@@ -45,7 +45,7 @@ const FAQ = [
   },
   {
     q: 'Comment payer l’abonnement ?',
-    a: 'Par carte bancaire (Visa, Mastercard), avec un prélèvement automatique chaque mois, ou par MTN Mobile Money et Orange Money, avec un rappel avant chaque échéance.',
+    a: 'Par MTN Mobile Money, Orange Money ou carte bancaire, via Notch Pay. Chaque mois se paie à l’avance, avec un rappel avant chaque échéance : jamais de prélèvement surprise.',
   },
   {
     q: 'Puis-je résilier à tout moment ?',
@@ -125,8 +125,8 @@ export default function LandingPage() {
           <PlanGroup title="Pour les cabinets comptables" plans={cabinet} />
 
           <p className="mt-8 text-sm text-inksoft">
-            Paiement par carte bancaire (prélèvement mensuel automatique, sécurisé par Stripe) ou par
-            Mobile Money (MTN, Orange). Voir les{' '}
+            Paiement sécurisé par Notch Pay : MTN Mobile Money, Orange Money ou carte bancaire.
+            Sans prélèvement automatique. Voir les{' '}
             <Link href="/cgv" className="text-primary underline">
               conditions générales de vente
             </Link>{' '}

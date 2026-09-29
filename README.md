@@ -88,7 +88,21 @@ npm run dev
 - **Abonnements** payés par carte bancaire (**Stripe**, renouvellement automatique, portail client) ou par Mobile Money (**Flutterwave**, avec relances), période de grâce en cas d'impayé.
 - **Journal d'audit** de toutes les opérations.
 
-## Paiement par carte (Stripe)
+## Paiement des abonnements (Notch Pay)
+
+Les abonnements se paient par **Notch Pay** : MTN Mobile Money, Orange Money ou carte bancaire, sur la page hébergée par Notch Pay. Chaque mois se paie à l'avance, sans prélèvement automatique ; les relances quotidiennes rappellent l'échéance.
+
+**Connecter le compte Notch Pay**
+
+1. Tableau de bord Notch Pay → **Paramètres → Développeurs** : copier la **clé publique** dans `NOTCHPAY_PUBLIC_KEY` (clé de test pour essayer, clé de production ensuite).
+2. Déclarer le webhook `https://<adresse-de-l-api>/api/webhooks/notchpay` (événements de paiement) et copier la **clé de hachage** dans `NOTCHPAY_HASH_KEY`.
+3. Redémarrer (ou redéployer) l'API : le bouton « Payer (Mobile Money ou carte) » apparaît sur la page Abonnement.
+
+Sécurité : ni le retour du navigateur ni le webhook n'activent seuls un abonnement ; la transaction est toujours relue chez Notch Pay (statut, montant, devise, référence).
+
+**Tester sans compte** : `api/scripts/fake-notchpay-server.py` simule l'API Notch Pay et `api/scripts/notchpay-flow-test.js` rejoue le cycle complet (15 vérifications). Mode d'emploi en tête du script.
+
+## Paiement par carte (Stripe, facultatif)
 
 Les abonnements par carte passent par **Stripe Checkout** : la carte est saisie sur la page hébergée par Stripe, jamais sur Numera. Stripe prélève ensuite chaque mois automatiquement. Aucun produit n'est à créer dans Stripe : les prix sont envoyés à chaque paiement depuis `api/src/subscription/plans.ts`, en FCFA (XAF), et Stripe convertit vers la devise de versement du compte.
 

@@ -655,6 +655,7 @@ model Subscription {
 enum PaymentProvider {
   FLUTTERWAVE
   STRIPE
+  NOTCHPAY
   MANUAL
 }
 
