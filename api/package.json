@@ -15,7 +15,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "smoke": "python3 scripts/smoke-test.py"
+    "smoke": "python3 scripts/smoke-test.py",
+    "vercel-build": "prisma generate && sh scripts/migrate-deploy.sh && nest build"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

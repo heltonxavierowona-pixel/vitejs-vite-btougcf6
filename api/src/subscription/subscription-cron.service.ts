@@ -41,7 +41,25 @@ export class SubscriptionCronService {
   //  1. Cycle de relance d'abonnement — tous les jours à 8h
   // ----------------------------------------------------------
 
+  /**
+   * Sur un serveur permanent (Docker), les tâches tournent ici.
+   * Sur Vercel (fonctions à la demande), aucun minuteur ne survit :
+   * c'est Vercel Cron qui appelle /api/cron/* (voir CronController).
+   */
+  private get internalSchedulerEnabled() {
+    return !process.env.VERCEL;
+  }
+
   @Cron('0 8 * * *', { timeZone: 'Africa/Douala' })
+  async scheduledDunning() {
+    if (this.internalSchedulerEnabled) await this.runDunning();
+  }
+
+  @Cron('0 7 * * *', { timeZone: 'Africa/Douala' })
+  async scheduledTaxReminders() {
+    if (this.internalSchedulerEnabled) await this.runTaxReminders();
+  }
+
   async runDunning() {
     const now = new Date();
     const in3Days = new Date(now.getTime() + 3 * 86_400_000);
@@ -145,7 +163,6 @@ export class SubscriptionCronService {
   //  2. Rappels d'échéance fiscale — tous les jours à 7h
   // ----------------------------------------------------------
 
-  @Cron('0 7 * * *', { timeZone: 'Africa/Douala' })
   async runTaxReminders() {
     const now = new Date();
     const period = this.currentDeclarablePeriod(now);

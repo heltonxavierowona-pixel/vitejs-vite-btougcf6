@@ -6,6 +6,7 @@ import {
   SubscriptionController,
 } from './subscription.controller';
 import { StripeService } from './stripe.service';
+import { CronController } from './cron.controller';
 import { StripeBillingService } from './stripe-billing.service';
 import { SubscriptionService } from './subscription.service';
 import { FlutterwaveService } from './flutterwave.service';
@@ -16,6 +17,7 @@ import { SubscriptionCronService } from './subscription-cron.service';
     SubscriptionController,
     FlutterwaveWebhookController,
     StripeWebhookController,
+    CronController,
   ],
   providers: [
     SubscriptionService,
