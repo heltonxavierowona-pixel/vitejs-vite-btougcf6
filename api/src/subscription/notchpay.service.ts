@@ -1,4 +1,9 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 import { BRAND } from '../config/brand';
@@ -74,41 +79,49 @@ export class NotchPayService {
   async initPayment(
     params: PaymentInitParams,
   ): Promise<{ paymentUrl: string; providerRef: string | null }> {
-    const response = await fetch(`${this.baseUrl}/payments`, {
-      method: 'POST',
-      headers: this.headers(),
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        amount: Math.round(params.amount / 100),
-        currency: 'XAF',
-        reference: params.txRef,
-        description: params.description,
-        callback: params.redirectUrl,
+    const phone = normalizeCameroonPhone(params.customerPhone);
+    const payload = {
+      amount: Math.round(params.amount / 100),
+      currency: 'XAF',
+      reference: params.txRef,
+      description: params.description,
+      callback: params.redirectUrl,
+      email: params.customerEmail,
+      ...(phone && { phone }),
+      customer: {
         email: params.customerEmail,
-        customer: {
-          email: params.customerEmail,
-          name: params.customerName,
-          ...(params.customerPhone && { phone: params.customerPhone }),
-        },
-      }),
-    });
+        name: params.customerName,
+        ...(phone && { phone }),
+      },
+    };
 
-    const body: any = await response.json().catch(() => null);
-    const paymentUrl: string | undefined =
-      body?.authorization_url ?? body?.transaction?.authorization_url;
+    // Point d'entrée actuel, puis l'historique en secours : les deux
+    // coexistent chez Notch Pay selon l'ancienneté du compte.
+    let lastError = 'réponse inattendue';
+    for (const path of ['/payments', '/payments/initialize']) {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: 'POST',
+        headers: this.headers(),
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify(payload),
+      });
+      const body: any = await response.json().catch(() => null);
+      const paymentUrl: string | undefined =
+        body?.authorization_url ?? body?.transaction?.authorization_url;
 
-    if (!response.ok || !paymentUrl) {
+      if (response.ok && paymentUrl) {
+        return { paymentUrl, providerRef: body?.transaction?.reference ?? null };
+      }
+
+      lastError = describeNotchPayError(response.status, body);
       this.logger.error(
-        `Échec d'initialisation Notch Pay ${params.txRef} (HTTP ${response.status})`,
-        JSON.stringify(body),
+        `Notch Pay ${path} a refusé ${params.txRef} (HTTP ${response.status}) : ${JSON.stringify(body)}`,
       );
-      throw new Error(body?.message ?? 'Impossible de créer le lien de paiement');
+      // Clé refusée : inutile d'essayer l'autre point d'entrée.
+      if (response.status === 401 || response.status === 403) break;
     }
 
-    return {
-      paymentUrl,
-      providerRef: body?.transaction?.reference ?? null,
-    };
+    throw new BadGatewayException(`Notch Pay a refusé le paiement : ${lastError}`);
   }
 
   /**
@@ -173,4 +186,31 @@ export class NotchPayService {
   describe(planLabel: string) {
     return `${BRAND.name} — ${planLabel} — 1 mois`;
   }
+}
+
+/**
+ * Numéro camerounais au format international (+237…). Les numéros
+ * saisis sans indicatif (« 656566762 ») sont complétés ; tout autre
+ * format est transmis tel quel ou omis s'il est vide.
+ */
+export function normalizeCameroonPhone(input?: string | null): string | undefined {
+  const digits = (input ?? '').replace(/[^\d+]/g, '');
+  if (!digits) return undefined;
+  if (digits.startsWith('+')) return digits;
+  if (digits.startsWith('00')) return `+${digits.slice(2)}`;
+  if (digits.startsWith('237') && digits.length === 12) return `+${digits}`;
+  if (/^6\d{8}$/.test(digits)) return `+237${digits}`;
+  return digits;
+}
+
+/** Message lisible à partir d'une erreur de l'API Notch Pay. */
+export function describeNotchPayError(status: number, body: any): string {
+  if (status === 401 || status === 403) {
+    return 'clé API refusée (vérifiez NOTCHPAY_PUBLIC_KEY).';
+  }
+  const details =
+    body?.errors && typeof body.errors === 'object'
+      ? Object.values(body.errors).flat().filter(Boolean).join(' ')
+      : '';
+  return [body?.message, details].filter(Boolean).join(' — ') || `erreur HTTP ${status}`;
 }

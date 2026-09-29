@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { api } from '@/lib/api';
@@ -118,6 +118,15 @@ function SubscriptionView() {
     void load();
   }, [load]);
 
+  // Les boutons de paiement sont en bas de page : sans cela, le
+  // message d'erreur s'affiche hors de l'écran sur téléphone.
+  const messageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error || notice) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [error, notice]);
+
   /** Redirige vers la page de paiement hébergée par le prestataire. */
   async function subscribe(planCode: string, provider?: Provider) {
     setBusy(`${planCode}-${provider ?? ''}`);
@@ -191,8 +200,10 @@ function SubscriptionView() {
         </Alert>
       )}
 
-      {error && <Alert tone="error">{error}</Alert>}
-      {notice && <Alert tone="info">{notice}</Alert>}
+      <div ref={messageRef} className="space-y-5 empty:hidden" role="status" aria-live="polite">
+        {error && <Alert tone="error">{error}</Alert>}
+        {notice && <Alert tone="info">{notice}</Alert>}
+      </div>
 
       {subscription && (
         <Panel title="Votre formule">

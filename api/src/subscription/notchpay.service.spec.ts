@@ -1,6 +1,38 @@
 import { createHmac } from 'crypto';
 
-import { NotchPayService } from './notchpay.service';
+import {
+  describeNotchPayError,
+  normalizeCameroonPhone,
+  NotchPayService,
+} from './notchpay.service';
+
+describe('normalizeCameroonPhone', () => {
+  it.each([
+    ['656566762', '+237656566762'],
+    ['6 56 56 67 62', '+237656566762'],
+    ['237656566762', '+237656566762'],
+    ['00237656566762', '+237656566762'],
+    ['+237656566762', '+237656566762'],
+  ])('%s → %s', (input, expected) => {
+    expect(normalizeCameroonPhone(input)).toBe(expected);
+  });
+
+  it('omet un numéro vide', () => {
+    expect(normalizeCameroonPhone('')).toBeUndefined();
+    expect(normalizeCameroonPhone(null)).toBeUndefined();
+  });
+});
+
+describe('describeNotchPayError', () => {
+  it('explique un refus de clé', () => {
+    expect(describeNotchPayError(401, null)).toContain('clé API refusée');
+  });
+  it('reprend le message et les erreurs de validation', () => {
+    expect(
+      describeNotchPayError(422, { message: 'Validation', errors: { phone: ['Numéro invalide'] } }),
+    ).toBe('Validation — Numéro invalide');
+  });
+});
 
 describe('NotchPayService.verifyWebhookSignature', () => {
   const service = new NotchPayService();
