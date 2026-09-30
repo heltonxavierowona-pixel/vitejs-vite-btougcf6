@@ -13,7 +13,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { GRACE_PERIOD_DAYS, PLANS } from './plans';
+import { gracePeriodDays, PLANS } from './plans';
 import {
   Stripe,
   StripeService,
@@ -335,7 +335,7 @@ export class StripeBillingService {
     if (!local || local.status === SubscriptionStatus.PAST_DUE) return;
 
     const graceEnd = new Date();
-    graceEnd.setDate(graceEnd.getDate() + GRACE_PERIOD_DAYS);
+    graceEnd.setDate(graceEnd.getDate() + gracePeriodDays());
 
     await this.prisma.subscription.update({
       where: { id: local.id },

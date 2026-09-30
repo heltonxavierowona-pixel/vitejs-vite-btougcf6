@@ -18,7 +18,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 
-type Provider = 'NOTCHPAY' | 'STRIPE' | 'FLUTTERWAVE';
+type Provider = 'NEERO' | 'NOTCHPAY' | 'STRIPE' | 'FLUTTERWAVE';
 
 interface Plan {
   code: string;
@@ -68,6 +68,7 @@ interface Subscription {
 
 /** Libellé du bouton de paiement, par prestataire. */
 const payLabel: Record<Provider, string> = {
+  NEERO: '(Mobile Money)',
   NOTCHPAY: '(Mobile Money ou carte)',
   STRIPE: 'par carte',
   FLUTTERWAVE: 'par Mobile Money',
@@ -82,6 +83,7 @@ const statusLabel: Record<string, string> = {
 };
 
 const providerLabel: Record<Provider, string> = {
+  NEERO: 'Neero',
   NOTCHPAY: 'Notch Pay',
   STRIPE: 'Carte bancaire',
   FLUTTERWAVE: 'Mobile Money',
@@ -449,6 +451,8 @@ function SubscriptionView() {
       <Alert tone="info">
         {manual &&
           'Paiement par Mobile Money (MTN, Orange), grâce à un lien de paiement sécurisé que nous vous envoyons par e-mail ou WhatsApp. Après le paiement, saisissez la référence de transaction ici : votre accès est activé dès vérification. Chaque mois se paie à l’avance, sans prélèvement automatique. '}
+        {providers.includes('NEERO') &&
+          'Paiement sécurisé par Neero : MTN Mobile Money ou Orange Money, sur la page de paiement Neero. Chaque mois se paie à l’avance : aucun prélèvement automatique, un lien de renouvellement vous est envoyé avant chaque échéance. '}
         {providers.includes('NOTCHPAY') &&
           'Paiement sécurisé par Notch Pay : MTN Mobile Money, Orange Money ou carte bancaire. Chaque mois se paie à l’avance : aucun prélèvement automatique, un rappel vous est envoyé avant chaque échéance. '}
         {providers.includes('STRIPE') &&

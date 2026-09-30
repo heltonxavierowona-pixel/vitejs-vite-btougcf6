@@ -9,6 +9,8 @@ import {
 import { StripeService } from './stripe.service';
 import { NotchPayService } from './notchpay.service';
 import { CronController } from './cron.controller';
+import { NeeroWebhookController } from './neero-webhook.controller';
+import { NeeroBillingService } from './neero-billing.service';
 import { AdminController } from './admin.controller';
 import { ManualPaymentService } from './manual-payment.service';
 import { PlatformAdminGuard } from '../auth/platform-admin';
@@ -24,6 +26,7 @@ import { SubscriptionCronService } from './subscription-cron.service';
     NotchPayWebhookController,
     StripeWebhookController,
     CronController,
+    NeeroWebhookController,
     AdminController,
   ],
   providers: [
@@ -33,6 +36,7 @@ import { SubscriptionCronService } from './subscription-cron.service';
     StripeBillingService,
     NotchPayService,
     SubscriptionCronService,
+    NeeroBillingService,
     ManualPaymentService,
     PlatformAdminGuard,
   ],

@@ -8,6 +8,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { timingSafeEqual } from 'crypto';
 
 import { SubscriptionCronService } from './subscription-cron.service';
+import { NeeroBillingService } from './neero-billing.service';
 
 /**
  * Déclenchement des tâches quotidiennes par Vercel Cron
@@ -18,7 +19,10 @@ import { SubscriptionCronService } from './subscription-cron.service';
 @Controller('cron')
 @SkipThrottle()
 export class CronController {
-  constructor(private readonly cron: SubscriptionCronService) {}
+  constructor(
+    private readonly cron: SubscriptionCronService,
+    private readonly neeroBilling: NeeroBillingService,
+  ) {}
 
   @Get('dunning')
   async dunning(@Headers('authorization') authorization?: string) {
@@ -32,6 +36,18 @@ export class CronController {
     this.assertAuthorized(authorization);
     await this.cron.runTaxReminders();
     return { ok: true };
+  }
+
+  /**
+   * Rattrapage des paiements Neero sans webhook. Vercel (offre
+   * gratuite) ne lance une tâche qu'une fois par jour : pour le
+   * rythme de 15 minutes, un service externe (cron-job.org…) peut
+   * appeler cette adresse avec le même en-tête.
+   */
+  @Get('payments-reconcile')
+  async paymentsReconcile(@Headers('authorization') authorization?: string) {
+    this.assertAuthorized(authorization);
+    return { ok: true, ...(await this.neeroBilling.reconcilePending()) };
   }
 
   private assertAuthorized(authorization?: string) {

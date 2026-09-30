@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -17,7 +18,11 @@ import { randomBytes } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { FlutterwaveService } from './flutterwave.service';
-import { NotchPayService } from './notchpay.service';
+import { NotchPayService, normalizeCameroonPhone } from './notchpay.service';
+import { NeeroProvider } from '../payments/neero/neero.provider';
+import { NotifierService } from './notifier.service';
+import { BRAND } from '../config/brand';
+import type { PaymentVerification } from './flutterwave.service';
 import { StripeBillingService } from './stripe-billing.service';
 import { PLANS, UNLIMITED, plansFor } from './plans';
 import { canUseSubscription, SUBSCRIPTION_BLOCKED_MESSAGE } from './access';
@@ -31,6 +36,8 @@ export class SubscriptionService {
     private readonly flutterwave: FlutterwaveService,
     private readonly stripeBilling: StripeBillingService,
     private readonly notchpay: NotchPayService,
+    private readonly neero: NeeroProvider,
+    private readonly notifier: NotifierService,
   ) {}
 
   /**
@@ -46,6 +53,7 @@ export class SubscriptionService {
   paymentProviders(): PaymentProvider[] {
     if (!this.onlinePaymentsEnabled) return [];
     return [
+      ...(this.neero.isConfigured ? [PaymentProvider.NEERO] : []),
       ...(this.notchpay.isEnabled ? [PaymentProvider.NOTCHPAY] : []),
       ...(this.stripeBilling.isEnabled ? [PaymentProvider.STRIPE] : []),
       ...(process.env.FLUTTERWAVE_SECRET_KEY ? [PaymentProvider.FLUTTERWAVE] : []),
@@ -220,6 +228,10 @@ export class SubscriptionService {
       return this.checkoutNotchPay(organization, planCode, userEmail);
     }
 
+    if (provider === PaymentProvider.NEERO) {
+      return this.checkoutNeero(organization, planCode, userEmail);
+    }
+
     const txRef = this.flutterwave.buildTxRef(organizationId);
 
     const payment = await this.prisma.payment.create({
@@ -309,16 +321,19 @@ export class SubscriptionService {
     // On ne fait jamais confiance au webhook seul : la transaction
     // est relue chez le prestataire du paiement.
     const isNotchPay = payment.provider === PaymentProvider.NOTCHPAY;
-    const verification = isNotchPay
-      ? await this.notchpay.verifyPayment(payment.providerTxId ?? txRef)
-      : await this.flutterwave.verifyPayment(providerTxId);
+    const isNeero = payment.provider === PaymentProvider.NEERO;
+    const verification = isNeero
+      ? await this.verifyNeero(payment.providerTxId)
+      : isNotchPay
+        ? await this.notchpay.verifyPayment(payment.providerTxId ?? txRef)
+        : await this.flutterwave.verifyPayment(providerTxId);
 
     // La transaction vérifiée doit être CELLE de ce paiement :
     // sinon un seul paiement réussi pourrait être rejoué pour
     // activer n'importe quel autre abonnement.
     const sameTransaction =
       verification.txRef === txRef ||
-      (isNotchPay &&
+      ((isNotchPay || isNeero) &&
         !!payment.providerTxId &&
         verification.providerTxId === payment.providerTxId);
 
@@ -344,15 +359,25 @@ export class SubscriptionService {
       // Seul un échec DÉFINITIF de CETTE transaction clôt le paiement :
       // ni une attente, ni une tentative frauduleuse ne doivent
       // bloquer le vrai paiement.
-      if (verification.isFailed && sameTransaction) {
-        await this.prisma.payment.updateMany({
+      // Neero : montant ou devise anormal sur la BONNE transaction, le
+      // paiement est clos aussi pour ne pas le revérifier indéfiniment.
+      const closes =
+        sameTransaction && (verification.isFailed || (isNeero && verification.isSuccessful));
+      if (closes) {
+        const closed = await this.prisma.payment.updateMany({
           where: { id: payment.id, status: PaymentStatus.PENDING },
           data: {
-            status: PaymentStatus.FAILED,
+            status:
+              verification.finalStatus === 'expired'
+                ? PaymentStatus.EXPIRED
+                : verification.finalStatus === 'canceled'
+                  ? PaymentStatus.CANCELED
+                  : PaymentStatus.FAILED,
             failureReason: failure,
             providerRaw: rawWithPlan,
           },
         });
+        if (closed.count > 0 && isNeero) await this.notifyNeeroFailure(payment, failure);
       }
       return { success: false, reason: failure };
     }
@@ -383,7 +408,191 @@ export class SubscriptionService {
     if (!result) {
       return { success: true, alreadyProcessed: true, paymentId: payment.id };
     }
+    if (isNeero) await this.notifyNeeroSuccess(payment, planCode, result.currentPeriodEnd);
     return { success: true, subscription: result };
+  }
+
+  // ----------------------------------------------------------
+  //  Neero
+  // ----------------------------------------------------------
+
+  /**
+   * Paiement Neero : ligne « pending », demande d'encaissement et
+   * session de paiement hébergée. Le montant vient toujours de la
+   * formule, jamais du navigateur.
+   */
+  async checkoutNeero(
+    organization: {
+      id: string;
+      name: string;
+      billingEmail: string;
+      billingPhone: string;
+      subscription: { id: string } | null;
+    },
+    planCode: PlanCode,
+    userEmail: string,
+    options: { renewalStage?: string } = {},
+  ) {
+    const plan = PLANS[planCode];
+    const txRef = `NRO-${organization.id.slice(0, 8)}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+    const period = await this.previewPeriod(organization.id, planCode);
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        organizationId: organization.id,
+        subscriptionId: organization.subscription?.id,
+        provider: PaymentProvider.NEERO,
+        amount: plan.priceMonthly,
+        currency: 'XAF',
+        txRef,
+        status: PaymentStatus.PENDING,
+        providerRaw: { planCode, ...(options.renewalStage && { renewalStage: options.renewalStage }) },
+        periodStart: period.start,
+        periodEnd: period.end,
+      },
+    });
+
+    const app = this.neero.config.appPublicUrl;
+    const back = `${app}/abonnement/retour?provider=neero&ref=${encodeURIComponent(txRef)}`;
+    try {
+      const { transactionIntentId, paymentUrl } = await this.neero.createCheckout({
+        amount: Math.round(plan.priceMonthly / 100),
+        currency: 'XAF',
+        customer: {
+          name: organization.name,
+          email: organization.billingEmail || userEmail,
+          phone: normalizeCameroonPhone(organization.billingPhone),
+        },
+        metadata: {
+          project: this.neero.config.project,
+          paymentId: payment.id,
+          customerId: organization.id,
+          planId: planCode,
+          periodEnd: period.end.toISOString(),
+        },
+        successUrl: back,
+        failureUrl: `${back}&statut=echec`,
+        cancelUrl: `${app}/abonnement?paiement=annule`,
+        displayInfo: { name: BRAND.name, imageUrl: `${app}/numera-mark.png` },
+      });
+
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { providerTxId: transactionIntentId, paymentUrl },
+      });
+      return { paymentId: payment.id, txRef, paymentUrl, plan };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Erreur inconnue';
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED, failureReason: reason },
+      });
+      throw new BadGatewayException(`Paiement Neero impossible : ${reason}`);
+    }
+  }
+
+  /** Statut relu chez Neero, au format commun des vérifications. */
+  private async verifyNeero(transactionIntentId: string | null): Promise<PaymentVerification> {
+    if (!transactionIntentId) {
+      return { isSuccessful: false, amount: 0, currency: 'XAF', providerTxId: '', txRef: null, raw: null };
+    }
+    const trx = await this.neero.getTransactionStatus(transactionIntentId);
+    const closed = trx.status === 'failed' || trx.status === 'expired' || trx.status === 'canceled';
+    return {
+      isSuccessful: trx.status === 'succeeded',
+      isFailed: closed,
+      finalStatus: closed ? (trx.status as 'failed' | 'expired' | 'canceled') : undefined,
+      amount: trx.amount === null ? 0 : Math.round(trx.amount * 100),
+      currency: trx.currency ?? '',
+      providerTxId: trx.transactionIntentId,
+      txRef: null,
+      method: 'neero',
+      raw: trx.raw,
+    };
+  }
+
+  /** Période qu'ouvrirait ce paiement (même règle que activatePaidPeriod). */
+  private async previewPeriod(organizationId: string, planCode: PlanCode) {
+    const existing = await this.prisma.subscription.findUnique({ where: { organizationId } });
+    const now = new Date();
+    const extend =
+      existing &&
+      existing.plan === planCode &&
+      existing.status !== SubscriptionStatus.TRIALING &&
+      existing.currentPeriodEnd > now;
+    const start = extend ? existing.currentPeriodEnd : now;
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1);
+    return { start, end };
+  }
+
+  private async notifyNeeroSuccess(
+    payment: { organizationId: string; amount: number; txRef: string; organization: { name: string; billingEmail: string } },
+    planCode: PlanCode,
+    periodEnd: Date,
+  ) {
+    const plan = PLANS[planCode];
+    await this.notifier.sendEmail(
+      await this.clientEmail(payment.organizationId, payment.organization.billingEmail),
+      `${BRAND.name} — paiement confirmé`,
+      [
+        'Bonjour,',
+        '',
+        `Votre paiement de ${fcfa(payment.amount)} est confirmé (référence ${payment.txRef}).`,
+        `Votre formule ${plan.label} est active jusqu’au ${frDate(periodEnd)}.`,
+        '',
+        'Merci de votre confiance.',
+      ].join('\n'),
+    );
+    await this.notifier.notifyAdmin('Paiement reçu (Neero)', [
+      `Projet : ${payment.organization.name}`,
+      `Offre : ${plan.label} — ${fcfa(payment.amount)}`,
+      `Valable jusqu’au ${frDate(periodEnd)}`,
+    ]);
+  }
+
+  private async notifyNeeroFailure(
+    payment: { organizationId: string; amount: number; organization: { name: string; billingEmail: string } },
+    reason: string,
+  ) {
+    const app = this.neero.config.appPublicUrl;
+    await this.notifier.sendEmail(
+      await this.clientEmail(payment.organizationId, payment.organization.billingEmail),
+      `${BRAND.name} — paiement non abouti`,
+      [
+        'Bonjour,',
+        '',
+        `Votre paiement de ${fcfa(payment.amount)} n’a pas abouti : ${reason}`,
+        `Vous pouvez réessayer depuis la page Abonnement : ${app}/abonnement`,
+      ].join('\n'),
+    );
+
+    // L'administratrice n'est prévenue qu'en cas d'échecs répétés.
+    const recentFailures = await this.prisma.payment.count({
+      where: {
+        organizationId: payment.organizationId,
+        provider: PaymentProvider.NEERO,
+        status: { in: [PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.CANCELED] },
+        updatedAt: { gte: new Date(Date.now() - 7 * 86_400_000) },
+      },
+    });
+    if (recentFailures >= 2) {
+      await this.notifier.notifyAdmin('Échecs de paiement répétés (Neero)', [
+        `Projet : ${payment.organization.name}`,
+        `${recentFailures} paiements non aboutis en 7 jours`,
+        `Dernier motif : ${reason}`,
+      ]);
+    }
+  }
+
+  /** E-mail de facturation, sinon celui du propriétaire du compte. */
+  async clientEmail(organizationId: string, billingEmail?: string | null) {
+    if (billingEmail) return billingEmail;
+    const owner = await this.prisma.membership.findFirst({
+      where: { organizationId, role: 'OWNER', deletedAt: null },
+      select: { user: { select: { email: true } } },
+    });
+    return owner?.user.email ?? '';
   }
 
   /**
@@ -684,4 +893,12 @@ export class SubscriptionService {
     if (normalized.includes('bank')) return 'BANK_TRANSFER' as const;
     return 'OTHER' as const;
   }
+}
+
+function fcfa(centimes: number): string {
+  return `${Math.round(centimes / 100).toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g, ' ')} FCFA`;
+}
+
+function frDate(value: Date): string {
+  return value.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Douala' });
 }

@@ -45,7 +45,7 @@ class SelectPlanDto {
 class CheckoutDto extends SelectPlanDto {
   /** Notch Pay (Mobile Money, carte), Stripe (carte) ou Flutterwave. */
   @IsOptional()
-  @IsIn([PaymentProvider.NOTCHPAY, PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
+  @IsIn([PaymentProvider.NEERO, PaymentProvider.NOTCHPAY, PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
   provider?: PaymentProvider;
 }
 
@@ -152,6 +152,21 @@ export class SubscriptionController {
   @Post('confirm-notchpay')
   @HttpCode(200)
   async confirmNotchPay(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+    @Body() dto: ConfirmNotchPayDto,
+  ) {
+    await this.assertMember(user.id, organizationId);
+    return this.subscriptions.confirmPayment(dto.txRef, dto.txRef, organizationId);
+  }
+
+  /**
+   * Page de retour Neero : relit la transaction CHEZ NEERO, côté
+   * serveur. L'adresse de retour elle-même ne prouve rien.
+   */
+  @Post('confirm-neero')
+  @HttpCode(200)
+  async confirmNeero(
     @CurrentUser() user: AuthUser,
     @Param('organizationId') organizationId: string,
     @Body() dto: ConfirmNotchPayDto,

@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Alert, Button, Loading, errorMessage } from '@/components/ui';
 
 /**
- * Retour du navigateur après le paiement (Notch Pay, Stripe ou Flutterwave).
+ * Retour du navigateur après le paiement (Neero, Notch Pay, Stripe ou Flutterwave).
  *
  * Flutterwave ajoute ?status=…&tx_ref=…&transaction_id=… à l'URL.
  * Ce paramètre n'est PAS une preuve : l'API revérifie la
@@ -34,10 +34,41 @@ function PaymentReturn() {
   // propres paramètres (reference, status…).
   const notchRef =
     searchParams.get('provider') === 'notchpay' ? searchParams.get('ref') : null;
+  // Neero : ?provider=neero&ref=<notre référence>[&statut=echec].
+  // L'adresse ne prouve rien : l'API relit la transaction chez Neero.
+  const neeroRef =
+    searchParams.get('provider') === 'neero' ? searchParams.get('ref') : null;
+  const neeroFailed = searchParams.get('statut') === 'echec';
 
   useEffect(() => {
     if (!current || started.current) return;
     started.current = true;
+
+    if (neeroRef) {
+      // Le paiement peut être validé sur le téléphone quelques
+      // secondes après le retour : on redemande jusqu'à 6 fois.
+      void (async () => {
+        for (let attempt = 0; attempt < (neeroFailed ? 1 : 6); attempt++) {
+          try {
+            const result = await api.post<{ success: boolean; reason?: string }>(
+              `/organizations/${current.organizationId}/subscription/confirm-neero`,
+              { txRef: neeroRef },
+            );
+            if (result.success) {
+              setState('success');
+              return;
+            }
+            setMessage(result.reason ?? 'Le paiement n’a pas abouti.');
+            if (result.reason && !/attente/i.test(result.reason)) break;
+          } catch (err) {
+            setMessage(errorMessage(err, 'Vérification du paiement impossible.'));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+        setState('failed');
+      })();
+      return;
+    }
 
     if (notchRef) {
       // Le paiement Mobile Money peut être validé sur le téléphone
@@ -116,13 +147,13 @@ function PaymentReturn() {
         setState('failed');
         setMessage(errorMessage(err, 'Vérification du paiement impossible.'));
       });
-  }, [current, status, txRef, transactionId, stripeSession, notchRef, searchParams]);
+  }, [current, status, txRef, transactionId, stripeSession, notchRef, neeroRef, neeroFailed, searchParams]);
 
   return (
     <div className="p-4 sm:p-6 max-w-lg mx-auto space-y-5">
       <h1 className="text-xl font-semibold tracking-tight">Paiement de l’abonnement</h1>
 
-      {state === 'checking' && <Loading label="Vérification du paiement auprès de l’opérateur…" />}
+      {state === 'checking' && <Loading label="Paiement en cours de vérification…" />}
 
       {state === 'success' && (
         <Alert tone="info">
@@ -135,8 +166,14 @@ function PaymentReturn() {
           {message} Si votre compte Mobile Money a été débité, la confirmation
           peut prendre quelques minutes : rechargez la page Abonnement plus tard
           ou contactez le support en indiquant la référence{' '}
-          <span className="tabular break-all">{notchRef ?? txRef ?? stripeSession ?? '—'}</span>.
+          <span className="tabular break-all">{neeroRef ?? notchRef ?? txRef ?? stripeSession ?? '—'}</span>.
         </Alert>
+      )}
+
+      {state === 'failed' && neeroRef && (
+        <Link href="/abonnement">
+          <Button>Réessayer le paiement</Button>
+        </Link>
       )}
 
       {state !== 'checking' && (

@@ -658,6 +658,7 @@ enum PaymentProvider {
   FLUTTERWAVE
   STRIPE
   NOTCHPAY
+  NEERO
   MANUAL
 }
 
@@ -666,6 +667,8 @@ enum PaymentStatus {
   SUCCEEDED
   FAILED
   REFUNDED
+  EXPIRED  // jamais payé dans le délai
+  CANCELED // annulé par le client ou par nous
 }
 
 model Payment {
@@ -687,11 +690,17 @@ model Payment {
   providerRaw   Json?
   failureReason String?
 
+  // Page de paiement hébergée et période couverte (Neero)
+  paymentUrl  String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+
   paidAt    DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@index([organizationId, status])
+  @@index([provider, status, createdAt])
   @@map("payments")
 }
 
@@ -764,6 +773,7 @@ model WebhookEvent {
   externalId String?
   payload    Json
   signature  String?
+  signatureValid Boolean?
   processedAt DateTime?
   error      String?
 

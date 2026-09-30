@@ -71,6 +71,7 @@ npm run dev
 | `cd api && API_URL=http://localhost:3000/api npm run smoke` | 50 vérifications de bout en bout sur une API démarrée : facturation, avoirs, TVA, dépôt, PDF, isolation entre comptes, jetons |
 | `cd api && node scripts/manual-payment-flow-test.js` | 45 vérifications du paiement par lien Neero (voir l'en-tête du script) |
 | `cd api && node scripts/password-reset-flow-test.js` | 13 vérifications du « mot de passe oublié », avec `scripts/fake-smtp-server.py` |
+| `cd api && node scripts/neero-flow-test.js` | 30 vérifications de l'encaissement Neero contre un faux serveur Neero (voir docs/NEERO.md) |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 
@@ -113,6 +114,10 @@ Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé
 Sans SMTP, le client retrouve son lien sur sa page Abonnement et l'administrateur l'envoie par WhatsApp en un clic. L'envoi WhatsApp entièrement automatique exigerait l'API WhatsApp Business (payante).
 
 **Tester** : `api/scripts/fake-telegram-server.py` simule Telegram et `api/scripts/manual-payment-flow-test.js` rejoue le parcours complet (52 vérifications). Mode d'emploi en tête du script.
+
+## Encaissement automatique par Neero (`PAYMENT_MODE=online`)
+
+Paiement sur la page hébergée par Neero (MTN, Orange), webhook signé, relecture de chaque transaction chez Neero, rattrapage des webhooks perdus, liens de renouvellement à J-5 et J-1. Mise en service, points à vérifier en Sandbox et réutilisation dans les autres projets : **[docs/NEERO.md](docs/NEERO.md)**.
 
 ## Paiement en ligne par Notch Pay (désactivé, `PAYMENT_MODE=online`)
 

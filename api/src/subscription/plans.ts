@@ -146,3 +146,12 @@ export const DUNNING_SCHEDULE_DAYS = [-3, 0, 3, 7, 14] as const;
 
 /** Jours de grâce après échéance avant suspension de l'accès. */
 export const GRACE_PERIOD_DAYS = 15;
+
+/**
+ * Délai de grâce après l'échéance, réglable par GRACE_PERIOD_DAYS.
+ * 15 jours par défaut : c'est la durée annoncée dans les CGV.
+ */
+export function gracePeriodDays(): number {
+  const days = Number(process.env.GRACE_PERIOD_DAYS);
+  return Number.isInteger(days) && days >= 0 ? days : GRACE_PERIOD_DAYS;
+}

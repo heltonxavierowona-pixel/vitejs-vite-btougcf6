@@ -3,12 +3,16 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   DeclarationStatus,
   PaymentProvider,
+  PlanCode,
   Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { GRACE_PERIOD_DAYS } from './plans';
+import { gracePeriodDays, PLANS } from './plans';
+import { NeeroBillingService } from './neero-billing.service';
+import { NotifierService } from './notifier.service';
+import { BRAND } from '../config/brand';
 import { ManualPaymentService } from './manual-payment.service';
 import { SubscriptionService } from './subscription.service';
 import { daysUntilDue, vatDueDate } from '../tax/deadline.util';
@@ -40,6 +44,8 @@ export class SubscriptionCronService {
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionService,
     private readonly manualPayments: ManualPaymentService,
+    private readonly neeroBilling: NeeroBillingService,
+    private readonly notifier: NotifierService,
   ) {}
 
   // ----------------------------------------------------------
@@ -58,6 +64,12 @@ export class SubscriptionCronService {
   @Cron('0 8 * * *', { timeZone: 'Africa/Douala' })
   async scheduledDunning() {
     if (this.internalSchedulerEnabled) await this.runDunning();
+  }
+
+  /** Webhooks Neero perdus : rattrapage toutes les 15 minutes. */
+  @Cron('*/15 * * * *')
+  async scheduledPaymentsReconcile() {
+    if (this.internalSchedulerEnabled) await this.neeroBilling.reconcilePending();
   }
 
   @Cron('0 7 * * *', { timeZone: 'Africa/Douala' })
@@ -87,6 +99,13 @@ export class SubscriptionCronService {
       await this.manualPayments.remindAdminOfPending();
     }
 
+    // --- Neero : rattrapage des webhooks perdus (sur Vercel, seul
+    //     passage garanti), puis liens de paiement à J-5 et J-1 ---
+    if (this.neeroBilling.enabled) {
+      await this.neeroBilling.reconcilePending(now);
+      renewals += await this.neeroBilling.sendRenewalLinks(now);
+    }
+
     // --- a) Échéance proche : prévenir avant expiration ---
     const expiringSoon = await this.prisma.subscription.findMany({
       where: {
@@ -98,7 +117,8 @@ export class SubscriptionCronService {
       include: { organization: true },
     });
 
-    for (const subscription of expiringSoon) {
+    // Avec Neero, les liens de J-5 et J-1 tiennent lieu de rappel.
+    for (const subscription of this.neeroBilling.enabled ? [] : expiringSoon) {
       await this.dispatchRenewalReminder(subscription, 'BEFORE');
     }
 
@@ -117,7 +137,7 @@ export class SubscriptionCronService {
 
     for (const subscription of justExpired) {
       const graceEnd = new Date(now);
-      graceEnd.setDate(graceEnd.getDate() + GRACE_PERIOD_DAYS);
+      graceEnd.setDate(graceEnd.getDate() + gracePeriodDays());
 
       await this.prisma.subscription.update({
         where: { id: subscription.id },
@@ -162,13 +182,20 @@ export class SubscriptionCronService {
     }
 
     // --- d) Grâce écoulée : suspendre ---
+    const suspended = await this.prisma.subscription.findMany({
+      where: { status: SubscriptionStatus.PAST_DUE, gracePeriodEnd: { lte: now } },
+      include: { organization: true },
+    });
     const toSuspend = await this.prisma.subscription.updateMany({
       where: {
+        id: { in: suspended.map((subscription) => subscription.id) },
         status: SubscriptionStatus.PAST_DUE,
-        gracePeriodEnd: { lte: now },
       },
       data: { status: SubscriptionStatus.SUSPENDED },
     });
+    for (const subscription of suspended) {
+      await this.notifySuspension(subscription);
+    }
 
     this.logger.log(
       `Relances : ${renewals} renouvellement(s) créé(s), ${expiringSoon.length} à venir, ${justExpired.length} échues, ` +
@@ -245,12 +272,39 @@ export class SubscriptionCronService {
   //  Points d'accroche — à brancher sur le canal retenu
   // ----------------------------------------------------------
 
+  /** Prévient le client que la saisie est bloquée. */
+  private async notifySuspension(subscription: {
+    organizationId: string;
+    plan: PlanCode;
+    organization: { billingEmail: string };
+  }) {
+    try {
+      await this.notifier.sendEmail(
+        await this.subscriptions.clientEmail(subscription.organizationId, subscription.organization.billingEmail),
+        `${BRAND.name} — abonnement suspendu`,
+        [
+          'Bonjour,',
+          '',
+          `Votre abonnement ${PLANS[subscription.plan].label} n’a pas été renouvelé : la saisie est suspendue.`,
+          'Vos factures et déclarations restent consultables.',
+          `Renouvelez depuis la page Abonnement pour tout réactiver immédiatement : ${(process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '')}/abonnement`,
+        ].join('\n'),
+      );
+    } catch (error) {
+      this.logger.error(`Avis de suspension non envoyé : ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
   /** Relance du client par e-mail, avec son lien de paiement s'il existe. */
   private async dispatchRenewalReminder(
     subscription: Parameters<ManualPaymentService['remindClient']>[0],
     stage: 'BEFORE' | 'DUE' | 'OVERDUE',
   ) {
     try {
+      if (this.neeroBilling.enabled && stage !== 'BEFORE') {
+        await this.neeroBilling.remindClient(subscription);
+        return;
+      }
       await this.manualPayments.remindClient(subscription, stage);
     } catch (error) {
       // Une relance ratée ne doit pas interrompre les suivantes.

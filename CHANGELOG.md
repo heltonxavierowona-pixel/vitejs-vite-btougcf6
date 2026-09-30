@@ -1,5 +1,14 @@
 # Journal des corrections
 
+## Encaissement automatique par Neero
+
+- Interface `PaymentProvider` indépendante du fournisseur et implémentation `NeeroProvider` (demande d'encaissement, session de paiement, statut, annulation, webhooks), réutilisable dans les autres projets NUMERA.
+- Webhook signé HMAC-SHA512 sur le corps brut, horodatage de moins de 5 minutes, idempotence, contrôle de l'opérateur ; chaque transaction est relue chez Neero (statut, montant, devise) avant activation.
+- Page de retour qui vérifie sans jamais activer d'elle-même ; rattrapage des webhooks perdus et expiration des paiements abandonnés.
+- Renouvellement : lien envoyé à J-5 et J-1, période de grâce réglable, e-mail de suspension, réactivation immédiate au paiement.
+- E-mails : confirmation, échec, renouvellement, suspension ; l'administratrice est prévenue à chaque paiement et en cas d'échecs répétés.
+- Script d'initialisation, sonde Sandbox, faux serveur Neero, 12 tests unitaires et 30 vérifications de bout en bout.
+
 ## Mot de passe oublié
 
 - Lien « Mot de passe oublié ? » sur la page de connexion : un e-mail contient un lien valable une heure et une seule fois.

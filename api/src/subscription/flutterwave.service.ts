@@ -44,6 +44,8 @@ export interface PaymentVerification {
    * peut encore valider sur son téléphone.
    */
   isFailed?: boolean;
+  /** Nature de l'échec définitif, quand le prestataire la précise. */
+  finalStatus?: 'failed' | 'expired' | 'canceled';
   amount: number; // centimes de FCFA
   currency: string;
   providerTxId: string;
