@@ -31,6 +31,8 @@ const TELEGRAM_CHAT_KEY = 'telegram.chatId';
 export class NotifierService {
   private readonly logger = new Logger(NotifierService.name);
   private transporter: Transporter | null = null;
+  /** Dernière erreur d'envoi d'e-mail, affichée par le test de l'écran admin. */
+  lastEmailError: string | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -161,6 +163,7 @@ export class NotifierService {
   async sendEmail(to: string, subject: string, text: string): Promise<boolean> {
     if (!to || !this.emailConfigured) {
       this.logger.warn(`E-mail non envoyé (SMTP non configuré) : ${subject}`);
+      this.lastEmailError = to ? 'SMTP non configuré' : 'aucun destinataire';
       return false;
     }
     try {
@@ -179,9 +182,11 @@ export class NotifierService {
         subject,
         text: `${text}\n\n— L’équipe ${BRAND.name}\n${BRAND.supportEmail}`,
       });
+      this.lastEmailError = null;
       return true;
     } catch (error) {
       this.logger.error(`E-mail « ${subject} » non envoyé : ${describe(error)}`);
+      this.lastEmailError = explainSmtpError(error);
       return false;
     }
   }
@@ -202,6 +207,21 @@ export function whatsappLink(phone: string | null | undefined, message: string):
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Cause lisible d'un échec SMTP (sans jamais citer le mot de passe). */
+export function explainSmtpError(error: unknown): string {
+  const text = describe(error);
+  if (/535|Username and Password not accepted|Invalid login|BadCredentials/i.test(text)) {
+    return 'identifiants refusés : vérifiez le mot de passe d’application Google dans SMTP_PASS (16 lettres, sans espaces) et que SMTP_USER est la même adresse Gmail';
+  }
+  if (/534|Application-specific password required/i.test(text)) {
+    return 'Google exige un mot de passe d’application : activez la validation en deux étapes puis créez-en un';
+  }
+  if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|timeout/i.test(text)) {
+    return `serveur d’envoi injoignable (${process.env.SMTP_HOST}:${process.env.SMTP_PORT ?? 465})`;
+  }
+  return text.slice(0, 200);
 }
 
 /** Faux serveur autorisé pour les tests locaux uniquement. */

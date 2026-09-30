@@ -15,7 +15,7 @@ import { IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength, ValidateIf }
 
 import { AuthGuard, AuthUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/context.decorator';
-import { PlatformAdminGuard } from '../auth/platform-admin';
+import { PlatformAdminGuard, platformAdminEmails } from '../auth/platform-admin';
 import { ManualPaymentService } from './manual-payment.service';
 import { NotifierService } from './notifier.service';
 
@@ -145,8 +145,16 @@ export class AdminController {
       'Si vous lisez ce message, les notifications fonctionnent.',
     ]);
     if (!sent) {
-      throw new BadRequestException('Aucun canal de notification ne fonctionne encore.');
+      const cause = this.notifier.lastEmailError;
+      throw new BadRequestException(
+        cause
+          ? `E-mail non envoyé : ${cause}.`
+          : 'Aucun canal de notification ne fonctionne encore.',
+      );
     }
-    return { sent };
+    return {
+      sent,
+      message: `E-mail de test envoyé à ${platformAdminEmails().join(', ')} : vérifiez votre boîte (et les spams).`,
+    };
   }
 }

@@ -502,7 +502,7 @@ function NotificationsPanel({
           <Button
             variant="secondary"
             disabled={busy !== null}
-            onClick={() => void run('test', '/admin/notifications/test', () => 'Notification de test envoyée.')}
+            onClick={() => void run('test', '/admin/notifications/test', (data) => data?.message ?? 'Notification de test envoyée.')}
           >
             {busy === 'test' ? 'Envoi…' : 'Envoyer un test'}
           </Button>
