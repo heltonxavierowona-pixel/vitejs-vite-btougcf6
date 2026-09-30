@@ -134,6 +134,8 @@ export default function AdminPaymentsPage() {
       {error && <Alert tone="error">{error}</Alert>}
       {notice && <Alert tone="info">{notice}</Alert>}
 
+      <PlanLinksPanel onDone={done} onError={fail} />
+
       {notifications && (
         <NotificationsPanel status={notifications} onDone={done} onError={fail} />
       )}
@@ -505,6 +507,132 @@ function NotificationsPanel({
             {busy === 'test' ? 'Envoi…' : 'Envoyer un test'}
           </Button>
         </div>
+      </div>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------
+
+interface PlanLink {
+  plan: string;
+  label: string;
+  audience: 'ENTREPRISE' | 'CABINET';
+  amount: number;
+  paymentLink: string | null;
+}
+
+/** Liens Neero préparés : envoyés au client dès sa demande. */
+function PlanLinksPanel({
+  onDone,
+  onError,
+}: {
+  onDone: (message: string) => Promise<void>;
+  onError: (err: unknown) => void;
+}) {
+  const [links, setLinks] = useState<PlanLink[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // Chargé une seule fois : onError change à chaque rendu du parent.
+  useEffect(() => {
+    api
+      .get<PlanLink[]>('/admin/plan-links')
+      .then(setLinks)
+      .catch((err) => onError(err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save(plan: PlanLink, value: string) {
+    setBusy(plan.plan);
+    try {
+      const updated = await api.post<PlanLink[]>('/admin/plan-links', {
+        plan: plan.plan,
+        paymentLink: value.trim() || null,
+      });
+      setLinks(updated);
+      setDrafts((d) => ({ ...d, [plan.plan]: '' }));
+      await onDone(
+        value.trim()
+          ? `Lien enregistré pour ${plan.label} : il sera envoyé automatiquement à chaque demande.`
+          : `Lien retiré pour ${plan.label} : les demandes attendront votre lien.`,
+      );
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!links) return null;
+  const configured = links.filter((l) => l.paymentLink).length;
+
+  return (
+    <Panel title={`Liens Neero par formule (${configured}/${links.length})`}>
+      <div className="p-4 space-y-4 text-sm">
+        <p className="text-inksoft">
+          Créez dans Neero un lien de paiement par formule, au bon montant, et collez-le ici. Le
+          client le reçoit alors instantanément, même la nuit : il ne vous reste qu’à vérifier le
+          paiement et valider.
+        </p>
+        <ul className="divide-y divide-line border-y border-line">
+          {links.map((link) => {
+            const draft = drafts[link.plan] ?? '';
+            return (
+              <li key={link.plan} className="py-3 space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-medium">
+                    {link.label}{' '}
+                    <span className="text-xs text-inksoft">
+                      · {link.audience === 'CABINET' ? 'cabinet' : 'entreprise'}
+                    </span>
+                  </span>
+                  <span className="tabular font-semibold">{formatMoney(link.amount)}</span>
+                </div>
+                {link.paymentLink ? (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-safe">✅</span>
+                    <a href={link.paymentLink} target="_blank" rel="noopener noreferrer" className="text-primary underline break-all">
+                      {link.paymentLink}
+                    </a>
+                    <button
+                      type="button"
+                      className="text-xs text-critical underline"
+                      disabled={busy !== null}
+                      onClick={() => void save(link, '')}
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    className="flex flex-col sm:flex-row gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void save(link, draft);
+                    }}
+                  >
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://… (lien Neero de cette formule)"
+                      aria-label={`Lien Neero pour ${link.label}`}
+                      value={draft}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [link.plan]: e.target.value }))}
+                    />
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={busy !== null || !draft.trim().startsWith('https://')}
+                    >
+                      {busy === link.plan ? 'Enregistrement…' : 'Enregistrer'}
+                    </Button>
+                  </form>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </Panel>
   );

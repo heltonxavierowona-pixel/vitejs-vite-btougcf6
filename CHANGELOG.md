@@ -8,7 +8,9 @@
 - Écran **/admin/paiements** : coller le lien Neero (envoyé par e-mail, affiché au client, message WhatsApp prêt), valider ou refuser la référence de transaction, historique.
 - Le client saisit sa référence ; une référence ne sert qu'une fois ; validation tracée au journal d'audit.
 - Échéances : demande de renouvellement créée trois jours avant, liste envoyée à l'administrateur, relances e-mail au client.
-- Site public et CGV mis à jour ; faux serveur Telegram et scénario de 45 vérifications.
+- Liens Neero préparés par formule : envoyés instantanément au client dès sa demande (et aux renouvellements).
+- E-mails envoyés par Brevo (SMTP).
+- Site public et CGV mis à jour ; faux serveur Telegram et scénario de 52 vérifications.
 
 ## Paiement par Notch Pay
 

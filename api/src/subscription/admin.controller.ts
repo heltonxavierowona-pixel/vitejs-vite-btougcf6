@@ -10,7 +10,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { PlanCode } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 import { AuthGuard, AuthUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/context.decorator';
@@ -22,6 +23,17 @@ class SendLinkDto {
   @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'Collez un lien https complet.' })
   @MaxLength(500)
   paymentLink: string;
+}
+
+class PlanLinkDto {
+  @IsEnum(PlanCode)
+  plan: PlanCode;
+
+  /** Vide pour retirer le lien de cette formule. */
+  @ValidateIf((dto) => !!dto.paymentLink)
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'Collez un lien https complet.' })
+  @MaxLength(500)
+  paymentLink?: string | null;
 }
 
 class ValidateDto {
@@ -81,6 +93,18 @@ export class AdminController {
   @HttpCode(200)
   cancel(@Param('id', ParseUUIDPipe) id: string) {
     return this.manualPayments.cancelByAdmin(id);
+  }
+
+  /** Liens Neero préparés par formule, envoyés automatiquement. */
+  @Get('plan-links')
+  planLinks() {
+    return this.manualPayments.planLinks();
+  }
+
+  @Post('plan-links')
+  @HttpCode(200)
+  setPlanLink(@Body() dto: PlanLinkDto) {
+    return this.manualPayments.setPlanLink(dto.plan, dto.paymentLink?.trim() || null);
   }
 
   // ----------------------------------------------------------

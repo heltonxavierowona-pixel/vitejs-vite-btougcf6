@@ -110,8 +110,6 @@ async function register(email, orgName, niu) {
   check('lien envoyé', link.status === 200 && link.data.emailed === false, link);
   check('lien WhatsApp vers le client', /^https:\/\/wa\.me\/237656566762\?text=/.test(link.data.whatsappUrl ?? '') && decodeURIComponent(link.data.whatsappUrl).includes('https://pay.neero.test/l/abc123'), link.data);
 
-  const locked = await call('POST', `${base}/checkout`, { plan: 'PME_PRO' }, client.token);
-  check('autre formule refusée une fois le lien envoyé (409)', locked.status === 409, locked);
 
   current = await call('GET', base, undefined, client.token);
   check('le client voit son lien', current.data.paymentRequest?.status === 'LINK_SENT' && current.data.paymentRequest.paymentLink === 'https://pay.neero.test/l/abc123', current.data.paymentRequest);
@@ -119,11 +117,13 @@ async function register(email, orgName, niu) {
   // --- 3. Référence ---
   const invalid = await call('POST', `${base}/payment-request/reference`, { transactionRef: '<script>' }, client.token);
   check('référence invalide refusée', invalid.status === 400, invalid);
-  const ref1 = await call('POST', `${base}/payment-request/reference`, { transactionRef: '  neero  111222 ' }, client.token);
-  check('référence enregistrée et normalisée', ref1.status === 200 && ref1.data.paymentRequest.transactionRef === 'NEERO 111222' && ref1.data.paymentRequest.status === 'REFERENCE_SUBMITTED', ref1);
+  const ref1 = await call('POST', `${base}/payment-request/reference`, { transactionRef: `  neero  ${run} ` }, client.token);
+  check('référence enregistrée et normalisée', ref1.status === 200 && ref1.data.paymentRequest.transactionRef === `NEERO ${run}`.toUpperCase() && ref1.data.paymentRequest.status === 'REFERENCE_SUBMITTED', ref1);
   const tg2 = await lastTelegram();
-  check('Telegram : paiement à vérifier', tg2.includes('Paiement à vérifier') && tg2.includes('NEERO 111222'), tg2);
+  check('Telegram : paiement à vérifier', tg2.includes('Paiement à vérifier') && tg2.includes(`NEERO ${run}`.toUpperCase()), tg2);
 
+  const locked = await call('POST', `${base}/checkout`, { plan: 'PME_PRO' }, client.token);
+  check('changement de formule refusé pendant la vérification (409)', locked.status === 409, locked);
   const noCancel = await call('POST', `${base}/payment-request/cancel`, undefined, client.token);
   check('annulation impossible pendant la vérification', noCancel.status === 400, noCancel);
 
@@ -132,8 +132,8 @@ async function register(email, orgName, niu) {
   current = await call('GET', base, undefined, client.token);
   check('le client voit le motif et peut corriger', current.data.paymentRequest?.status === 'LINK_SENT' && /Aucune transaction/.test(current.data.paymentRequest.rejectionReason), current.data.paymentRequest);
 
-  const ref2 = await call('POST', `${base}/payment-request/reference`, { transactionRef: 'TX-998877' }, client.token);
-  check('nouvelle référence', ref2.data.paymentRequest?.transactionRef === 'TX-998877', ref2);
+  const ref2 = await call('POST', `${base}/payment-request/reference`, { transactionRef: `TX-${run}`.toUpperCase() }, client.token);
+  check('nouvelle référence', ref2.data.paymentRequest?.transactionRef === `TX-${run}`.toUpperCase(), ref2);
 
   // --- 4. Validation ---
   const validate = await call('POST', `/admin/payment-requests/${item.id}/validate`, {}, adminToken);
@@ -154,14 +154,31 @@ async function register(email, orgName, niu) {
   const otherBase = `/organizations/${other.org}/subscription`;
   const otherReq = await call('POST', `${otherBase}/checkout`, { plan: 'PME_STARTER' }, other.token);
   await call('POST', `/admin/payment-requests/${otherReq.data.paymentRequest.id}/link`, { paymentLink: 'https://pay.neero.test/l/zzz' }, adminToken);
-  const reuse = await call('POST', `${otherBase}/payment-request/reference`, { transactionRef: 'tx-998877' }, other.token);
+  const reuse = await call('POST', `${otherBase}/payment-request/reference`, { transactionRef: `tx-${run}` }, other.token);
   check('référence déjà utilisée refusée (409)', reuse.status === 409, reuse);
-  const adminReuse = await call('POST', `/admin/payment-requests/${otherReq.data.paymentRequest.id}/validate`, { transactionRef: 'TX-998877' }, adminToken);
+  const adminReuse = await call('POST', `/admin/payment-requests/${otherReq.data.paymentRequest.id}/validate`, { transactionRef: `TX-${run}`.toUpperCase() }, adminToken);
   check('même contrôle à la validation admin', adminReuse.status === 409, adminReuse);
   const otherCancel = await call('POST', `${otherBase}/payment-request/cancel`, undefined, other.token);
   check('le client peut annuler avant de payer', otherCancel.status === 200, otherCancel);
   const closed = await call('GET', '/admin/payment-requests?scope=closed', undefined, adminToken);
   check('historique admin', closed.data.some((r) => r.status === 'VALIDATED') && closed.data.some((r) => r.status === 'CANCELLED'), closed.data.map((r) => r.status));
+
+  // --- Liens préparés par formule : envoi immédiat ---
+  const setLink = await call('POST', '/admin/plan-links', { plan: 'PME_PRO', paymentLink: 'https://pay.neero.test/l/pme-pro' }, adminToken);
+  check('lien préparé pour une formule', setLink.status === 200 && setLink.data.find((l) => l.plan === 'PME_PRO')?.paymentLink === 'https://pay.neero.test/l/pme-pro', setLink);
+  const badPlanLink = await call('POST', '/admin/plan-links', { plan: 'FREE', paymentLink: 'https://x.test' }, adminToken);
+  check('pas de lien pour la formule gratuite', badPlanLink.status === 400, badPlanLink);
+  const third = await register(`nuit-${run}@test.cm`, `Pharmacie ${run}`, `NTHI${run}`.toUpperCase());
+  const thirdBase = `/organizations/${third.org}/subscription`;
+  const instant = await call('POST', `${thirdBase}/checkout`, { plan: 'PME_PRO' }, third.token);
+  check('lien envoyé instantanément', instant.data.paymentRequest?.status === 'LINK_SENT' && instant.data.paymentRequest.paymentLink === 'https://pay.neero.test/l/pme-pro' && /prêt/.test(instant.data.message), instant.data);
+  check('Telegram : lien parti automatiquement', (await lastTelegram()).includes('envoyé automatiquement'), await lastTelegram());
+  const switched = await call('POST', `${thirdBase}/checkout`, { plan: 'PME_STARTER' }, third.token);
+  check('changement vers une formule sans lien préparé : lien retiré', switched.data.paymentRequest?.status === 'AWAITING_LINK' && switched.data.paymentRequest.paymentLink === null, switched.data);
+  const back = await call('POST', `${thirdBase}/checkout`, { plan: 'PME_PRO' }, third.token);
+  check('retour à la formule avec lien : renvoyé', back.data.paymentRequest?.status === 'LINK_SENT', back.data);
+  const cleared = await call('POST', '/admin/plan-links', { plan: 'PME_PRO', paymentLink: '' }, adminToken);
+  check('lien préparé retiré', cleared.data.find((l) => l.plan === 'PME_PRO')?.paymentLink === null, cleared.data);
 
   // --- 5. Renouvellement ---
   sql(`update subscriptions set "currentPeriodEnd" = now() + interval '2 days' where "organizationId"='${client.org}'`);

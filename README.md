@@ -95,7 +95,7 @@ Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé
 
 1. Le client choisit sa formule sur la page Abonnement. Sa demande passe « en attente de paiement » et il lit « Votre lien de paiement vous sera envoyé sous quelques heures » (également par e-mail).
 2. L'administrateur reçoit une notification (Telegram, WhatsApp ou e-mail) : client, projet, offre, montant.
-3. Il génère le lien dans l'app Neero et le colle dans **/admin/paiements** : le client le reçoit par e-mail, le voit sur sa page Abonnement, et un bouton prépare le message WhatsApp.
+3. **Liens préparés** : si l'administrateur a enregistré dans /admin/paiements un lien Neero pour cette formule, le client le reçoit instantanément (e-mail et page Abonnement), même la nuit. Sinon, l'administrateur génère le lien dans Neero et le colle sur la demande ; un bouton prépare aussi le message WhatsApp.
 4. Le client paie puis saisit la référence de transaction. Nouvelle notification ; l'administrateur vérifie dans Neero et clique **Valider** : l'accès s'active pour un mois. Une référence ne peut servir qu'une fois.
 5. Trois jours avant chaque échéance, les relances quotidiennes créent la demande de renouvellement, préviennent l'administrateur et relancent le client par e-mail jusqu'au paiement.
 
@@ -106,12 +106,12 @@ Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé
 | `PLATFORM_ADMIN_EMAILS` | e-mails ayant accès à /admin/paiements (bouton « Admin » dans l'en-tête) |
 | `WHATSAPP_NOTIFY_PHONE`, `WHATSAPP_NOTIFY_APIKEY` | notifications WhatsApp vers votre numéro via CallMeBot (gratuit) : envoyez « I allow callmebot to send me messages » au numéro indiqué sur callmebot.com, qui répond la clé |
 | `TELEGRAM_BOT_TOKEN` | jeton du bot créé avec @BotFather ; la conversation se relie ensuite depuis l'écran admin | (prioritaire sur WhatsApp) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients (Gmail : `smtp.gmail.com`, `465`, mot de passe d'application) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients et à l'administrateur. Brevo (gratuit, 300 e-mails/jour) : `smtp-relay.brevo.com`, `587`, identifiant SMTP du compte, clé SMTP (Brevo → SMTP & API → Clés SMTP) ; `MAIL_FROM` doit être un expéditeur validé dans Brevo |
 | `PAYMENT_MODE` | `online` pour réactiver Notch Pay / Stripe (voir ci-dessous) |
 
 Sans SMTP, le client retrouve son lien sur sa page Abonnement et l'administrateur l'envoie par WhatsApp en un clic. L'envoi WhatsApp entièrement automatique exigerait l'API WhatsApp Business (payante).
 
-**Tester** : `api/scripts/fake-telegram-server.py` simule Telegram et `api/scripts/manual-payment-flow-test.js` rejoue le parcours complet (45 vérifications). Mode d'emploi en tête du script.
+**Tester** : `api/scripts/fake-telegram-server.py` simule Telegram et `api/scripts/manual-payment-flow-test.js` rejoue le parcours complet (52 vérifications). Mode d'emploi en tête du script.
 
 ## Paiement en ligne par Notch Pay (désactivé, `PAYMENT_MODE=online`)
 

@@ -29,6 +29,8 @@ const OPEN: PaymentRequestStatus[] = [
   PaymentRequestStatus.REFERENCE_SUBMITTED,
 ];
 
+const PLAN_LINK_PREFIX = 'neero.link.';
+
 /** Délai annoncé au client pour recevoir son lien. */
 export const LINK_DELAY_MESSAGE =
   'Votre lien de paiement vous sera envoyé sous quelques heures.';
@@ -76,26 +78,38 @@ export class ManualPaymentService {
       throw new BadRequestException('Cette formule est gratuite.');
     }
 
+    const planLink = await this.planLink(planCode);
     const open = await this.findOpen(organizationId);
     if (open) {
       if (open.plan === planCode) return this.requestResponse(open);
-      if (open.status !== PaymentRequestStatus.AWAITING_LINK) {
+      // Une référence saisie signifie un paiement peut-être déjà fait :
+      // on ne change plus la formule sous les pieds de l'administrateur.
+      if (open.status === PaymentRequestStatus.REFERENCE_SUBMITTED) {
         throw new ConflictException(
-          `Une demande de paiement est déjà en cours (${PLANS[open.plan].label}). ` +
-            'Annulez-la pour choisir une autre formule.',
+          `Votre paiement (${PLANS[open.plan].label}) est en cours de vérification. ` +
+            'Vous pourrez changer de formule ensuite.',
         );
       }
-      // Lien pas encore généré : on change simplement de formule.
+      // Changement de formule : le lien de l'ancienne ne vaut plus.
       const updated = await this.prisma.paymentRequest.update({
         where: { id: open.id },
-        data: { plan: planCode, amount: plan.priceMonthly },
+        data: {
+          plan: planCode,
+          amount: plan.priceMonthly,
+          status: PaymentRequestStatus.AWAITING_LINK,
+          paymentLink: null,
+          linkSentAt: null,
+          rejectionReason: null,
+        },
+        include: { organization: true },
       });
+      if (planLink) await this.deliver(updated, planLink);
       await this.notifier.notifyAdmin('Demande modifiée', [
         `Projet : ${organization.name}`,
         `Nouvelle offre : ${plan.label} — ${money(plan.priceMonthly)}`,
-        `À traiter : ${adminUrl()}`,
+        planLink ? 'Lien Neero envoyé automatiquement au client.' : `Lien à envoyer : ${adminUrl()}`,
       ]);
-      return this.requestResponse(updated);
+      return this.requestResponse(await this.reload(open.id));
     }
 
     let created;
@@ -108,6 +122,7 @@ export class ManualPaymentService {
           amount: plan.priceMonthly,
           kind: PaymentRequestKind.NEW,
         },
+        include: { organization: true },
       });
     } catch (error) {
       // Double clic : l'index unique n'autorise qu'une demande en cours.
@@ -123,29 +138,37 @@ export class ManualPaymentService {
       select: { firstName: true, lastName: true, email: true, phone: true },
     });
 
+    // Lien préparé pour cette formule : envoyé tout de suite, même la
+    // nuit. Sinon, l'administrateur le génère et le colle à la main.
+    if (planLink) {
+      await this.deliver(created, planLink);
+    } else {
+      await this.notifier.sendEmail(
+        await this.clientEmail(organizationId, organization.billingEmail),
+        `${BRAND.name} — demande d’abonnement reçue`,
+        [
+          'Bonjour,',
+          '',
+          `Nous avons bien reçu votre demande d’abonnement à la formule ${plan.label} (${money(plan.priceMonthly)} par mois).`,
+          LINK_DELAY_MESSAGE,
+          '',
+          'Vous pourrez aussi le retrouver sur la page Abonnement de votre espace.',
+        ].join('\n'),
+      );
+    }
+
     await this.notifier.notifyAdmin('Nouvelle demande d’abonnement', [
       `Client : ${requester ? `${requester.firstName} ${requester.lastName}` : '—'}`,
       `Projet : ${organization.name} (${organization.type === 'CABINET' ? 'cabinet' : 'entreprise'})`,
       `Offre : ${plan.label}`,
       `Montant : ${money(plan.priceMonthly)}`,
       `Contact : ${organization.billingPhone || requester?.phone || '—'} · ${organization.billingEmail || requester?.email || '—'}`,
-      `Générer le lien Neero puis le coller ici : ${adminUrl()}`,
+      planLink
+        ? `Lien Neero envoyé automatiquement. Vérifiez le paiement puis validez : ${adminUrl()}`
+        : `Générer le lien Neero puis le coller ici : ${adminUrl()}`,
     ]);
 
-    await this.notifier.sendEmail(
-      organization.billingEmail || requester?.email || '',
-      `${BRAND.name} — demande d’abonnement reçue`,
-      [
-        'Bonjour,',
-        '',
-        `Nous avons bien reçu votre demande d’abonnement à la formule ${plan.label} (${money(plan.priceMonthly)} par mois).`,
-        LINK_DELAY_MESSAGE,
-        '',
-        'Vous pourrez aussi le retrouver sur la page Abonnement de votre espace.',
-      ].join('\n'),
-    );
-
-    return this.requestResponse(created);
+    return this.requestResponse(await this.reload(created.id));
   }
 
   async submitReference(organizationId: string, rawRef: string) {
@@ -282,8 +305,60 @@ export class ManualPaymentService {
       throw new BadRequestException('Le lien ne peut plus être modifié pour cette demande.');
     }
 
+    return this.deliver(request, paymentLink);
+  }
+
+  // ----------------------------------------------------------
+  //  Liens préparés par formule
+  // ----------------------------------------------------------
+
+  /** Formules payantes et lien Neero préparé pour chacune. */
+  async planLinks() {
+    const settings = await this.prisma.platformSetting.findMany({
+      where: { key: { startsWith: PLAN_LINK_PREFIX } },
+    });
+    const byPlan = new Map(settings.map((s) => [s.key.slice(PLAN_LINK_PREFIX.length), s.value]));
+    return Object.values(PLANS)
+      .filter((plan) => plan.priceMonthly > 0)
+      .map((plan) => ({
+        plan: plan.code,
+        label: plan.label,
+        audience: plan.audience,
+        amount: plan.priceMonthly,
+        paymentLink: byPlan.get(plan.code) ?? null,
+      }));
+  }
+
+  async setPlanLink(planCode: PlanCode, paymentLink: string | null) {
+    const plan = PLANS[planCode];
+    if (!plan || plan.priceMonthly === 0) throw new BadRequestException('Formule inconnue ou gratuite.');
+    const key = `${PLAN_LINK_PREFIX}${planCode}`;
+    if (paymentLink) {
+      await this.prisma.platformSetting.upsert({
+        where: { key },
+        create: { key, value: paymentLink },
+        update: { value: paymentLink },
+      });
+    } else {
+      await this.prisma.platformSetting.deleteMany({ where: { key } });
+    }
+    return this.planLinks();
+  }
+
+  private async planLink(planCode: PlanCode): Promise<string | null> {
+    const setting = await this.prisma.platformSetting.findUnique({
+      where: { key: `${PLAN_LINK_PREFIX}${planCode}` },
+    });
+    return setting?.value ?? null;
+  }
+
+  /** Enregistre le lien sur la demande et l'envoie au client. */
+  private async deliver(
+    request: { id: string; organizationId: string; plan: PlanCode; amount: number; requestedById: string | null; organization: { name: string; billingEmail: string; billingPhone: string } },
+    paymentLink: string,
+  ) {
     await this.prisma.paymentRequest.update({
-      where: { id },
+      where: { id: request.id },
       data: { paymentLink, linkSentAt: new Date(), status: PaymentRequestStatus.LINK_SENT },
     });
 
@@ -464,29 +539,34 @@ export class ManualPaymentService {
 
     const created: string[] = [];
     for (const subscription of due) {
+      let renewal;
       try {
-        await this.prisma.paymentRequest.create({
+        renewal = await this.prisma.paymentRequest.create({
           data: {
             organizationId: subscription.organizationId,
             plan: subscription.plan,
             amount: PLANS[subscription.plan].priceMonthly,
             kind: PaymentRequestKind.RENEWAL,
           },
+          include: { organization: true },
         });
       } catch (error) {
         if (isUniqueViolation(error)) continue; // créée entre-temps
         throw error;
       }
+      const link = await this.planLink(subscription.plan);
+      if (link) await this.deliver(renewal, link);
       created.push(
         `• ${subscription.organization.name} — ${PLANS[subscription.plan].label}, ` +
-          `${money(PLANS[subscription.plan].priceMonthly)}, échéance ${date(subscription.currentPeriodEnd)}`,
+          `${money(PLANS[subscription.plan].priceMonthly)}, échéance ${date(subscription.currentPeriodEnd)}` +
+          (link ? ' (lien envoyé)' : ' (lien à envoyer)'),
       );
     }
 
     if (created.length) {
       await this.notifier.notifyAdmin(`${created.length} abonnement(s) à renouveler`, [
         ...created,
-        `Générer les liens Neero : ${adminUrl()}`,
+        adminUrl(),
       ]);
     }
     return created.length;
@@ -542,6 +622,10 @@ export class ManualPaymentService {
   //  Privé
   // ----------------------------------------------------------
 
+  private reload(id: string) {
+    return this.prisma.paymentRequest.findUniqueOrThrow({ where: { id } });
+  }
+
   private findOpen(organizationId: string) {
     return this.prisma.paymentRequest.findFirst({
       where: { organizationId, status: { in: OPEN } },
@@ -555,7 +639,9 @@ export class ManualPaymentService {
       message:
         request.status === PaymentRequestStatus.AWAITING_LINK
           ? `Demande enregistrée. ${LINK_DELAY_MESSAGE}`
-          : 'Votre demande de paiement est en cours.',
+          : request.status === PaymentRequestStatus.LINK_SENT
+            ? 'Votre lien de paiement est prêt ci-dessous (il vous a aussi été envoyé par e-mail).'
+            : 'Votre demande de paiement est en cours.',
     };
   }
 
