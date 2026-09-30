@@ -157,6 +157,7 @@ model User {
   memberships Membership[]
   auditLogs   AuditLog[]
   sessions    Session[]
+  passwordResets PasswordResetToken[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -809,4 +810,19 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// Lien « mot de passe oublié » : seul le hachage du jeton est
+// conservé, valable une heure et une seule fois.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }

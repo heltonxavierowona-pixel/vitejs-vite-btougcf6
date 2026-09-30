@@ -61,6 +61,12 @@ export default function LoginPage() {
             />
           </Field>
 
+          <div className="-mt-2 text-right">
+            <Link href="/mot-de-passe-oublie" className="text-sm text-primary">
+              Mot de passe oublié ?
+            </Link>
+          </div>
+
           <Button
             type="submit"
             className="w-full"

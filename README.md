@@ -70,6 +70,7 @@ npm run dev
 | `cd api && npm run lint` | Vérification des types de l'API |
 | `cd api && API_URL=http://localhost:3000/api npm run smoke` | 50 vérifications de bout en bout sur une API démarrée : facturation, avoirs, TVA, dépôt, PDF, isolation entre comptes, jetons |
 | `cd api && node scripts/manual-payment-flow-test.js` | 45 vérifications du paiement par lien Neero (voir l'en-tête du script) |
+| `cd api && node scripts/password-reset-flow-test.js` | 13 vérifications du « mot de passe oublié », avec `scripts/fake-smtp-server.py` |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 
@@ -195,7 +196,6 @@ Le FCFA n'a pas de sous-unité : les centimes servent uniquement à la précisio
 
 - Invitation de collaborateurs (le modèle `Invitation` existe, les écrans et l'API non).
 - Envoi des factures par e-mail ou WhatsApp.
-- Réinitialisation du mot de passe par e-mail.
 
 ## Dépôt à la DGI
 

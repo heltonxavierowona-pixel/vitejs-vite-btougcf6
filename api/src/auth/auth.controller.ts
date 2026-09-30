@@ -13,7 +13,13 @@ import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { AuthGuard, AuthUser } from './auth.guard';
 import { CurrentUser } from './context.decorator';
-import { LoginDto, RefreshDto, RegisterDto } from './dto/auth.dto';
+import {
+  ForgotPasswordDto,
+  LoginDto,
+  RefreshDto,
+  RegisterDto,
+  ResetPasswordDto,
+} from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -37,6 +43,21 @@ export class AuthController {
       ip: req.ip,
       ua: req.headers['user-agent'],
     });
+  }
+
+  /** 5 demandes par heure et par IP : évite d'inonder une boîte mail. */
+  @Post('forgot-password')
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 3_600_000, limit: 5 } })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.requestPasswordReset(dto.email);
+  }
+
+  @Post('reset-password')
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto);
   }
 
   @Post('refresh')

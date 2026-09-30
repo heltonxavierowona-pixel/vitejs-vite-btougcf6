@@ -17,10 +17,13 @@ import { createHash, randomBytes } from 'crypto';
 import { isPlatformAdmin } from './platform-admin';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_TRIAL_PLAN, PLANS } from '../subscription/plans';
-import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, ResetPasswordDto } from './dto/auth.dto';
+import { NotifierService } from '../subscription/notifier.service';
+import { BRAND } from '../config/brand';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30;
+const RESET_TTL_MINUTES = 60;
 
 /**
  * Hash factice vérifié quand l'e-mail est inconnu : la réponse
@@ -48,7 +51,94 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly notifier: NotifierService,
   ) {}
+
+  // ----------------------------------------------------------
+  //  Mot de passe oublié
+  // ----------------------------------------------------------
+
+  /**
+   * Envoie un lien de réinitialisation. La réponse est la même que
+   * l'adresse soit inscrite ou non : impossible de deviner qui a un
+   * compte.
+   */
+  async requestPasswordReset(rawEmail: string) {
+    const email = rawEmail.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user && user.isActive && !user.deletedAt) {
+      const token = randomBytes(32).toString('base64url');
+      await this.prisma.$transaction([
+        // Un seul lien valable à la fois : les précédents sont annulés.
+        this.prisma.passwordResetToken.updateMany({
+          where: { userId: user.id, usedAt: null },
+          data: { usedAt: new Date() },
+        }),
+        this.prisma.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: hashToken(token),
+            expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60_000),
+          },
+        }),
+      ]);
+
+      const frontend = (process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+      await this.notifier.sendEmail(
+        user.email,
+        `${BRAND.name} — réinitialisation de votre mot de passe`,
+        [
+          `Bonjour ${user.firstName},`,
+          '',
+          'Pour choisir un nouveau mot de passe, ouvrez ce lien (valable une heure, une seule fois) :',
+          `${frontend}/mot-de-passe/nouveau?token=${token}`,
+          '',
+          'Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail : votre mot de passe reste inchangé.',
+        ].join('\n'),
+      );
+    }
+
+    return {
+      message:
+        'Si un compte existe avec cette adresse, un e-mail vient de vous être envoyé. ' +
+        'Pensez à regarder dans vos courriers indésirables.',
+    };
+  }
+
+  /** Nouveau mot de passe ; toutes les sessions ouvertes sont fermées. */
+  async resetPassword(dto: ResetPasswordDto) {
+    const now = new Date();
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashToken(dto.token) },
+      include: { user: true },
+    });
+    if (!record || record.usedAt || record.expiresAt <= now || !record.user.isActive || record.user.deletedAt) {
+      throw new BadRequestException(
+        'Ce lien est invalide ou a expiré. Faites une nouvelle demande.',
+      );
+    }
+
+    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+
+    await this.prisma.$transaction(async (tx) => {
+      // Verrou : un lien ne sert qu'une fois, même en double clic.
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: record.id, usedAt: null },
+        data: { usedAt: now },
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException('Ce lien a déjà été utilisé. Faites une nouvelle demande.');
+      }
+      await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+      await tx.session.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+    });
+
+    return { message: 'Mot de passe modifié. Vous pouvez vous connecter.' };
+  }
 
   /**
    * Inscription : crée l'utilisateur, son organisation et — pour

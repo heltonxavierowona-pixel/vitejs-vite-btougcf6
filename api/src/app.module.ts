@@ -13,6 +13,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { PdfModule } from './pdf/pdf.module';
 import { HealthModule } from './health/health.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { NotifierModule } from './subscription/notifier.module';
 import { EntityModule } from './entity/entity.module';
 import { PartyModule } from './party/party.module';
 
@@ -29,6 +30,7 @@ import { PartyModule } from './party/party.module';
     ScheduleModule.forRoot(),
 
     PrismaModule,
+    NotifierModule,
     AuditModule,
     AuthModule,
     InvoiceModule,

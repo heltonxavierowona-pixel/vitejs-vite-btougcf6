@@ -110,3 +110,22 @@ export class RefreshDto {
   @IsString()
   refreshToken: string;
 }
+
+export class ForgotPasswordDto {
+  @IsEmail({}, { message: 'Adresse e-mail invalide' })
+  @MaxLength(180)
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{32,128}$/, { message: 'Lien invalide ou expiré.' })
+  token: string;
+
+  @IsString()
+  @MinLength(10, {
+    message: 'Le mot de passe doit contenir au moins 10 caractères',
+  })
+  @MaxLength(128)
+  password: string;
+}

@@ -14,3 +14,4 @@ uploads/
 .DS_Store
 .vscode/*
 .idea
+api/scripts/.mails/

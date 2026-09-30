@@ -1,5 +1,12 @@
 # Journal des corrections
 
+## Mot de passe oublié
+
+- Lien « Mot de passe oublié ? » sur la page de connexion : un e-mail contient un lien valable une heure et une seule fois.
+- Réponse identique que l'adresse soit inscrite ou non ; seul le hachage du jeton est conservé ; 5 demandes par heure et par IP.
+- Le nouveau mot de passe ferme toutes les sessions ouvertes.
+- Faux serveur SMTP et scénario de 13 vérifications.
+
 ## Paiement par lien Neero (paiements en ligne suspendus)
 
 - Paiements en ligne désactivés par défaut (`PAYMENT_MODE`), code Notch Pay et Stripe conservé pour les réactiver.
