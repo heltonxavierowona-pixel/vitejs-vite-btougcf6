@@ -1,5 +1,15 @@
 # Journal des corrections
 
+## Tableau de bord administrateur
+
+- Chiffres clés : encaissé du mois (et évolution), revenu mensuel récurrent, clients, essais, échéances sous 7 jours, impayés, suspendus, paiements à traiter.
+- Graphique des encaissements des 12 derniers mois (info-bulle au survol ou au toucher, tableau pour lecteurs d'écran).
+- Clients : recherche (entreprise, e-mail, téléphone, NIU), filtres par statut, fiche détaillée (contacts, dossiers, paiements, demandes).
+- Gestes : prolonger (geste commercial ou paiement hors ligne enregistré), changer de formule, suspendre, réactiver ; chaque geste est tracé au journal d'audit.
+- Exports CSV pour Excel (clients, paiements), formules Excel neutralisées.
+- E-mails : à un client ou à un groupe (100 au plus par envoi), un e-mail par client ; relance d'un clic des clients en essai (au plus une par 24 h).
+- Scénario de 27 vérifications (`api/scripts/admin-dashboard-test.js`).
+
 ## Encaissement automatique par Neero
 
 - Interface `PaymentProvider` indépendante du fournisseur et implémentation `NeeroProvider` (demande d'encaissement, session de paiement, statut, annulation, webhooks), réutilisable dans les autres projets NUMERA.

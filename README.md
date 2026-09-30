@@ -71,6 +71,7 @@ npm run dev
 | `cd api && API_URL=http://localhost:3000/api npm run smoke` | 50 vérifications de bout en bout sur une API démarrée : facturation, avoirs, TVA, dépôt, PDF, isolation entre comptes, jetons |
 | `cd api && node scripts/manual-payment-flow-test.js` | 45 vérifications du paiement par lien Neero (voir l'en-tête du script) |
 | `cd api && node scripts/password-reset-flow-test.js` | 13 vérifications du « mot de passe oublié », avec `scripts/fake-smtp-server.py` |
+| `cd api && node scripts/admin-dashboard-test.js` | 27 vérifications du tableau de bord administrateur (chiffres, clients, gestes, exports, e-mails) |
 | `cd api && node scripts/neero-flow-test.js` | 30 vérifications de l'encaissement Neero contre un faux serveur Neero (voir docs/NEERO.md) |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
@@ -90,6 +91,7 @@ npm run dev
 - **Tableau de bord cabinet** : portefeuille trié par urgence, dossiers bloqués par des brouillons, majorations de retard estimées, charge par collaborateur.
 - **Abonnements** payés par lien de paiement Neero (validation par l'administrateur, notifications Telegram, relances), ou en ligne (Notch Pay, Stripe) ; période de grâce en cas d'impayé.
 - **Journal d'audit** de toutes les opérations.
+- **Tableau de bord administrateur** (`/admin`) : chiffres clés, revenus sur 12 mois, clients, prolongations et changements de formule, suspensions, exports CSV, e-mails aux clients.
 
 ## Paiement des abonnements (lien Neero)
 

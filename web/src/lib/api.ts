@@ -175,6 +175,24 @@ export const api = {
     request<T>(path, { method: 'PUT', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 
+  /** Télécharge un fichier (export CSV…), jeton inclus. */
+  async download(path: string, filename: string) {
+    const fetchFile = () =>
+      fetch(`${BASE_URL}${path}`, { headers: { Authorization: `Bearer ${tokens.access}` } });
+    let response = await fetchFile();
+    if (response.status === 401 && (await tryRefresh())) response = await fetchFile();
+    if (!response.ok) throw new ApiError('Téléchargement impossible', response.status);
+
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
+
   /**
    * Ouvre un PDF dans un nouvel onglet, jeton inclus.
    *

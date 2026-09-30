@@ -82,7 +82,7 @@ export default function AppLayout({
 
             {user?.isPlatformAdmin && (
               <Link
-                href="/admin/paiements"
+                href="/admin"
                 className={`h-8 px-3 flex items-center text-sm font-medium rounded-[4px] ${
                   pathname.startsWith('/admin') ? 'bg-primarysoft text-primary' : 'text-inksoft hover:text-ink hover:bg-surface'
                 }`}
@@ -97,7 +97,7 @@ export default function AppLayout({
           </div>
         </div>
 
-        {isCabinet && !entityId && (
+        {isCabinet && !entityId && !pathname.startsWith('/admin') && (
           <Tabs
             items={[
               { href: '/cabinet', label: 'Portefeuille', exact: true },
