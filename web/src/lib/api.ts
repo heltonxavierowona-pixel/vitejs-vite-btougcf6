@@ -228,6 +228,8 @@ export interface SessionUser {
   email: string;
   firstName: string;
   lastName: string;
+  /** Éditeur de Numera : accès à l'écran d'administration. */
+  isPlatformAdmin?: boolean;
 }
 
 export interface AuthResponse {

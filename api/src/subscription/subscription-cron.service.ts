@@ -9,6 +9,8 @@ import {
 
 import { PrismaService } from '../prisma/prisma.service';
 import { GRACE_PERIOD_DAYS } from './plans';
+import { ManualPaymentService } from './manual-payment.service';
+import { SubscriptionService } from './subscription.service';
 import { daysUntilDue, vatDueDate } from '../tax/deadline.util';
 
 /**
@@ -26,16 +28,19 @@ import { daysUntilDue, vatDueDate } from '../tax/deadline.util';
  *     C'est le message du 10 du mois qui fait qu'on garde
  *     l'abonnement.
  *
- *  ⚠️ L'envoi réel (WhatsApp, SMS, e-mail) n'est pas implémenté :
- *  il dépend du fournisseur retenu. Les méthodes dispatch*
- *  sont des points d'accroche.
+ *  Les relances d'abonnement partent par e-mail (NotifierService).
+ *  Les rappels fiscaux restent à brancher (dispatchTaxReminder).
  * ============================================================
  */
 @Injectable()
 export class SubscriptionCronService {
   private readonly logger = new Logger(SubscriptionCronService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+    private readonly manualPayments: ManualPaymentService,
+  ) {}
 
   // ----------------------------------------------------------
   //  1. Cycle de relance d'abonnement — tous les jours à 8h
@@ -72,6 +77,15 @@ export class SubscriptionCronService {
     const notStripe: Prisma.SubscriptionWhereInput = {
       OR: [{ provider: null }, { provider: { not: PaymentProvider.STRIPE } }],
     };
+
+    // --- Paiement manuel : la demande de renouvellement est créée
+    //     AVANT les relances, qui donnent ainsi le bon message au
+    //     client ; l'administrateur reçoit la liste à traiter ---
+    let renewals = 0;
+    if (!this.subscriptions.onlinePaymentsEnabled) {
+      renewals = await this.manualPayments.createRenewalRequests(now);
+      await this.manualPayments.remindAdminOfPending();
+    }
 
     // --- a) Échéance proche : prévenir avant expiration ---
     const expiringSoon = await this.prisma.subscription.findMany({
@@ -115,7 +129,10 @@ export class SubscriptionCronService {
         },
       });
 
-      await this.dispatchRenewalReminder(subscription, 'DUE');
+      await this.dispatchRenewalReminder(
+        { ...subscription, status: SubscriptionStatus.PAST_DUE, gracePeriodEnd: graceEnd },
+        'DUE',
+      );
     }
 
     // --- c) Impayés : relancer tous les 3 jours ---
@@ -154,7 +171,7 @@ export class SubscriptionCronService {
     });
 
     this.logger.log(
-      `Relances : ${expiringSoon.length} à venir, ${justExpired.length} échues, ` +
+      `Relances : ${renewals} renouvellement(s) créé(s), ${expiringSoon.length} à venir, ${justExpired.length} échues, ` +
         `${pastDue.length} impayées, ${toSuspend.count} suspendues`,
     );
   }
@@ -228,19 +245,20 @@ export class SubscriptionCronService {
   //  Points d'accroche — à brancher sur le canal retenu
   // ----------------------------------------------------------
 
-  /**
-   * ⚠️ NON IMPLÉMENTÉ.
-   * Canal à choisir : WhatsApp Business API, SMS, ou e-mail.
-   * Sur ce marché, WhatsApp est le plus lu — mais il impose
-   * des modèles de message préapprouvés.
-   */
+  /** Relance du client par e-mail, avec son lien de paiement s'il existe. */
   private async dispatchRenewalReminder(
-    subscription: any,
+    subscription: Parameters<ManualPaymentService['remindClient']>[0],
     stage: 'BEFORE' | 'DUE' | 'OVERDUE',
   ) {
-    this.logger.debug(
-      `[TODO] Relance ${stage} — ${subscription.organization.name}`,
-    );
+    try {
+      await this.manualPayments.remindClient(subscription, stage);
+    } catch (error) {
+      // Une relance ratée ne doit pas interrompre les suivantes.
+      this.logger.error(
+        `Relance ${stage} non envoyée — ${subscription.organizationId} : ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
   }
 
   /** ⚠️ NON IMPLÉMENTÉ — même remarque. */

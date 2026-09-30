@@ -23,7 +23,7 @@ export default function PrivacyPage() {
         <li>Données techniques : adresse IP et navigateur, conservés dans le journal de sécurité.</li>
       </ul>
       <p>
-        Les données de carte bancaire et de Mobile Money sont traitées directement par Notch Pay,
+        Les données de carte bancaire et de Mobile Money sont traitées directement par Neero,
         notre prestataire de paiement ; {brand.name} n’y a jamais accès.
       </p>
 
@@ -39,7 +39,7 @@ export default function PrivacyPage() {
       <p>
         Les données ne sont accessibles qu’aux membres de votre organisation, selon les droits
         que vous leur attribuez, et à nos sous-traitants techniques : hébergement (Vercel, Neon)
-        et paiements (Notch Pay). Chaque dossier est strictement cloisonné des autres.
+        et paiements (Neero). Chaque dossier est strictement cloisonné des autres.
       </p>
 
       <h2>Durée de conservation</h2>

@@ -9,6 +9,8 @@ import { formatDate, formatMoney } from '@/lib/format';
 import {
   Alert,
   Button,
+  Field,
+  Input,
   Loading,
   Modal,
   PageHeader,
@@ -28,6 +30,20 @@ interface Plan {
   features: string[];
 }
 
+type PaymentMode = 'manual' | 'online';
+
+interface PaymentRequest {
+  id: string;
+  plan: string;
+  planLabel: string;
+  amount: number;
+  kind: 'NEW' | 'RENEWAL';
+  status: 'AWAITING_LINK' | 'LINK_SENT' | 'REFERENCE_SUBMITTED';
+  paymentLink: string | null;
+  transactionRef: string | null;
+  rejectionReason: string | null;
+}
+
 interface Subscription {
   plan: Plan;
   status: string;
@@ -41,6 +57,7 @@ interface Subscription {
   gracePeriodEnd: string | null;
   daysLeft: number;
   needsRenewal: boolean;
+  paymentRequest: PaymentRequest | null;
   usage: {
     entities: number;
     maxEntities: number | null;
@@ -83,6 +100,7 @@ function SubscriptionView() {
   const searchParams = useSearchParams();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('manual');
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(
@@ -100,11 +118,14 @@ function SubscriptionView() {
     if (!current) return;
     try {
       const [catalog, sub] = await Promise.all([
-        api.get<{ providers: Provider[]; plans: Plan[] }>(`${base}/plans`),
+        api.get<{ paymentMode?: PaymentMode; providers: Provider[]; plans: Plan[] }>(
+          `${base}/plans`,
+        ),
         api.get<Subscription | null>(base),
       ]);
       setPlans(catalog.plans);
       setProviders(catalog.providers);
+      setPaymentMode(catalog.paymentMode ?? 'online');
       setSubscription(sub);
       setError(null);
     } catch (err) {
@@ -133,10 +154,10 @@ function SubscriptionView() {
     setError(null);
     setNotice(null);
     try {
-      const result = await api.post<{ paymentUrl: string | null }>(`${base}/checkout`, {
-        plan: planCode,
-        ...(provider && { provider }),
-      });
+      const result = await api.post<{ paymentUrl: string | null; message?: string }>(
+        `${base}/checkout`,
+        { plan: planCode, ...(provider && { provider }) },
+      );
       if (result.paymentUrl) {
         // On ne manipule jamais les identifiants de carte ou de
         // Mobile Money : tout se passe chez le prestataire de paiement.
@@ -144,6 +165,7 @@ function SubscriptionView() {
         return;
       }
       await load();
+      if (result.message) setNotice(result.message);
     } catch (err) {
       setError(errorMessage(err, 'Paiement impossible.'));
     }
@@ -181,6 +203,8 @@ function SubscriptionView() {
   if (loading) return <Loading />;
 
   const admin = isAdmin(current?.role);
+  const manual = paymentMode === 'manual';
+  const request = subscription?.paymentRequest ?? null;
   const byCard = !!subscription?.stripeSubscriptionId;
   const canCancel =
     admin &&
@@ -211,6 +235,9 @@ function SubscriptionView() {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="font-medium">{subscription.plan.label}</span>
               <span className="text-sm text-inksoft">
+                {request && (
+                  <span className="text-soon font-medium">En attente de paiement · </span>
+                )}
                 {statusLabel[subscription.status] ?? subscription.status}
                 {subscription.provider && subscription.provider !== 'MANUAL' &&
                   ` · ${providerLabel[subscription.provider]}`}
@@ -291,11 +318,27 @@ function SubscriptionView() {
         </Panel>
       )}
 
+      {request && (
+        <PaymentRequestPanel
+          request={request}
+          admin={admin}
+          base={base}
+          onChange={async (message) => {
+            await load();
+            setError(null);
+            setNotice(message);
+          }}
+          onError={setError}
+        />
+      )}
+
       {subscription?.status === 'PAST_DUE' && (
         <Alert tone="warning">
           {byCard
             ? 'Le dernier prélèvement sur votre carte a échoué. Mettez à jour votre carte pour éviter la suspension.'
-            : 'Votre paiement n’a pas été reçu. Renouvelez pour éviter la suspension de votre accès.'}
+            : request
+              ? 'Votre abonnement est échu : réglez votre paiement pour éviter la suspension de votre accès.'
+              : 'Votre paiement n’a pas été reçu. Renouvelez pour éviter la suspension de votre accès.'}
         </Alert>
       )}
 
@@ -353,6 +396,27 @@ function SubscriptionView() {
                     >
                       Choisir
                     </Button>
+                  ) : manual ? (
+                    request?.plan === plan.code ? (
+                      <span className="text-sm text-soon">Demande en cours</span>
+                    ) : (
+                      <Button
+                        variant={renewable || !isCurrent ? 'primary' : 'secondary'}
+                        onClick={() => subscribe(plan.code)}
+                        disabled={
+                          busy !== null ||
+                          (!!request && request.status !== 'AWAITING_LINK')
+                        }
+                      >
+                        {busy === `${plan.code}-`
+                          ? 'Envoi…'
+                          : renewable
+                            ? 'Renouveler'
+                            : request
+                              ? 'Choisir cette formule'
+                              : 'S’abonner'}
+                      </Button>
+                    )
                   ) : offered.length === 0 ? (
                     <span className="text-sm text-inksoft">
                       Paiement en ligne bientôt disponible.
@@ -383,6 +447,8 @@ function SubscriptionView() {
       </Panel>
 
       <Alert tone="info">
+        {manual &&
+          'Paiement par Mobile Money (MTN, Orange), grâce à un lien de paiement sécurisé que nous vous envoyons par e-mail ou WhatsApp. Après le paiement, saisissez la référence de transaction ici : votre accès est activé dès vérification. Chaque mois se paie à l’avance, sans prélèvement automatique. '}
         {providers.includes('NOTCHPAY') &&
           'Paiement sécurisé par Notch Pay : MTN Mobile Money, Orange Money ou carte bancaire. Chaque mois se paie à l’avance : aucun prélèvement automatique, un rappel vous est envoyé avant chaque échéance. '}
         {providers.includes('STRIPE') &&
@@ -414,5 +480,152 @@ function SubscriptionView() {
         </Modal>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------
+
+const requestSteps = ['Demande reçue', 'Lien envoyé', 'Vérification'];
+
+/** Demande de paiement manuelle (lien Neero) en cours. */
+function PaymentRequestPanel({
+  request,
+  admin,
+  base,
+  onChange,
+  onError,
+}: {
+  request: PaymentRequest;
+  admin: boolean;
+  base: string;
+  onChange: (message: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const step =
+    request.status === 'AWAITING_LINK' ? 0 : request.status === 'LINK_SENT' ? 1 : 2;
+
+  async function post(path: string, body: object | undefined, message: string) {
+    setBusy(true);
+    try {
+      await api.post(`${base}/payment-request/${path}`, body);
+      setReference('');
+      await onChange(message);
+    } catch (err) {
+      onError(errorMessage(err, 'Action impossible.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel
+      title={request.kind === 'RENEWAL' ? 'Renouvellement en attente de paiement' : 'En attente de paiement'}
+    >
+      <div className="p-4 space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="font-medium">{request.planLabel}</span>
+          <span className="font-semibold tabular">{formatMoney(request.amount)}</span>
+        </div>
+
+        <ol className="grid grid-cols-3 gap-2 text-xs" aria-label="Étapes du paiement">
+          {requestSteps.map((label, index) => (
+            <li
+              key={label}
+              aria-current={index === step ? 'step' : undefined}
+              className={`border-t-2 pt-1.5 ${
+                index < step
+                  ? 'border-safe text-safe'
+                  : index === step
+                    ? 'border-primary text-primary font-medium'
+                    : 'border-line text-inksoft'
+              }`}
+            >
+              {label}
+            </li>
+          ))}
+        </ol>
+
+        {request.status === 'AWAITING_LINK' && (
+          <p className="text-sm">
+            Votre lien de paiement vous sera envoyé sous quelques heures, par e-mail ou
+            WhatsApp. Il apparaîtra aussi sur cette page.
+          </p>
+        )}
+
+        {request.status === 'LINK_SENT' && request.paymentLink && (
+          <>
+            {request.rejectionReason && (
+              <Alert tone="warning">
+                Référence non confirmée : {request.rejectionReason} Vérifiez-la puis
+                saisissez-la de nouveau.
+              </Alert>
+            )}
+            <div>
+              <p className="text-sm mb-2">1. Payez avec votre lien sécurisé :</p>
+              <a
+                href={request.paymentLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center px-4 h-10 rounded-[4px] bg-primary text-white text-sm font-medium hover:bg-primaryhover"
+              >
+                Payer {formatMoney(request.amount)}
+              </a>
+            </div>
+            {admin && (
+              <form
+                className="space-y-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void post(
+                    'reference',
+                    { transactionRef: reference },
+                    'Référence envoyée : votre accès sera activé dès vérification du paiement.',
+                  );
+                }}
+              >
+                <p className="text-sm">2. Puis saisissez la référence de la transaction :</p>
+                <Field
+                  label="Référence de transaction"
+                  hint="Elle figure dans le SMS ou le reçu de confirmation du paiement."
+                >
+                  <Input
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    required
+                    minLength={4}
+                    maxLength={80}
+                    autoComplete="off"
+                  />
+                </Field>
+                <Button type="submit" disabled={busy || reference.trim().length < 4}>
+                  {busy ? 'Envoi…' : 'Envoyer la référence'}
+                </Button>
+              </form>
+            )}
+          </>
+        )}
+
+        {request.status === 'REFERENCE_SUBMITTED' && (
+          <p className="text-sm">
+            Paiement en cours de vérification (référence{' '}
+            <span className="font-medium">{request.transactionRef}</span>). Votre accès sera
+            activé dès confirmation.
+          </p>
+        )}
+
+        {admin && request.status !== 'REFERENCE_SUBMITTED' && (
+          <Button
+            variant="ghost"
+            className="text-critical px-0 h-auto"
+            disabled={busy}
+            onClick={() => void post('cancel', undefined, 'Demande de paiement annulée.')}
+          >
+            Annuler la demande
+          </Button>
+        )}
+      </div>
+    </Panel>
   );
 }

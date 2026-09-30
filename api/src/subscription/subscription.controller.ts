@@ -31,6 +31,8 @@ import { SubscriptionService } from './subscription.service';
 import { StripeBillingService } from './stripe-billing.service';
 import { NotchPayService } from './notchpay.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { ManualPaymentService } from './manual-payment.service';
+import { PLANS } from './plans';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, AuthUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/context.decorator';
@@ -51,6 +53,12 @@ class ConfirmNotchPayDto {
   @IsString()
   @Matches(/^[A-Za-z0-9._-]{4,80}$/, { message: 'Référence de paiement invalide' })
   txRef: string;
+}
+
+class TransactionRefDto {
+  @IsString()
+  @MaxLength(80)
+  transactionRef: string;
 }
 
 class ConfirmStripeDto {
@@ -77,6 +85,7 @@ export class SubscriptionController {
   constructor(
     private readonly subscriptions: SubscriptionService,
     private readonly stripeBilling: StripeBillingService,
+    private readonly manualPayments: ManualPaymentService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -105,12 +114,38 @@ export class SubscriptionController {
     @Body() dto: CheckoutDto,
   ) {
     await this.assertOwner(user.id, organizationId);
+    // Paiements en ligne désactivés : demande de lien Neero.
+    if (!this.subscriptions.onlinePaymentsEnabled && PLANS[dto.plan]?.priceMonthly > 0) {
+      return this.manualPayments.request(organizationId, dto.plan, user);
+    }
     return this.subscriptions.initiateCheckout(
       organizationId,
       dto.plan,
       user.email,
       dto.provider,
     );
+  }
+
+  /** Le client a payé avec le lien Neero : il saisit la référence. */
+  @Post('payment-request/reference')
+  @HttpCode(200)
+  async submitReference(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+    @Body() dto: TransactionRefDto,
+  ) {
+    await this.assertOwner(user.id, organizationId);
+    return this.manualPayments.submitReference(organizationId, dto.transactionRef);
+  }
+
+  @Post('payment-request/cancel')
+  @HttpCode(200)
+  async cancelPaymentRequest(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+  ) {
+    await this.assertOwner(user.id, organizationId);
+    return this.manualPayments.cancelByClient(organizationId);
   }
 
   /** Retour navigateur après un paiement Notch Pay. */

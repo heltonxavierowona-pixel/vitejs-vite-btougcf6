@@ -69,6 +69,7 @@ npm run dev
 | `cd api && npm test` | Tests unitaires : moteur de TVA, échéances, montant en lettres, parité API ↔ front, conversions Stripe |
 | `cd api && npm run lint` | Vérification des types de l'API |
 | `cd api && API_URL=http://localhost:3000/api npm run smoke` | 50 vérifications de bout en bout sur une API démarrée : facturation, avoirs, TVA, dépôt, PDF, isolation entre comptes, jetons |
+| `cd api && node scripts/manual-payment-flow-test.js` | 45 vérifications du paiement par lien Neero (voir l'en-tête du script) |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 
@@ -85,22 +86,43 @@ npm run dev
 - **Déclaration de TVA mensuelle** : calcul automatique depuis les factures validées, report du crédit, déclaration néant, alerte si des factures ont changé depuis le calcul, enregistrement du dépôt et du paiement.
 - **PDF** des factures (montant en toutes lettres, ventilation de la TVA, filigrane « BROUILLON ») et des déclarations.
 - **Tableau de bord cabinet** : portefeuille trié par urgence, dossiers bloqués par des brouillons, majorations de retard estimées, charge par collaborateur.
-- **Abonnements** payés par carte bancaire (**Stripe**, renouvellement automatique, portail client) ou par Mobile Money (**Flutterwave**, avec relances), période de grâce en cas d'impayé.
+- **Abonnements** payés par lien de paiement Neero (validation par l'administrateur, notifications Telegram, relances), ou en ligne (Notch Pay, Stripe) ; période de grâce en cas d'impayé.
 - **Journal d'audit** de toutes les opérations.
 
-## Paiement des abonnements (Notch Pay)
+## Paiement des abonnements (lien Neero)
 
-Les abonnements se paient par **Notch Pay** : MTN Mobile Money, Orange Money ou carte bancaire, sur la page hébergée par Notch Pay. Chaque mois se paie à l'avance, sans prélèvement automatique ; les relances quotidiennes rappellent l'échéance.
+Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé à la main (paiements en ligne désactivés) :
+
+1. Le client choisit sa formule sur la page Abonnement. Sa demande passe « en attente de paiement » et il lit « Votre lien de paiement vous sera envoyé sous quelques heures » (également par e-mail).
+2. L'administrateur reçoit une notification Telegram : client, projet, offre, montant.
+3. Il génère le lien dans l'app Neero et le colle dans **/admin/paiements** : le client le reçoit par e-mail, le voit sur sa page Abonnement, et un bouton prépare le message WhatsApp.
+4. Le client paie puis saisit la référence de transaction. Nouvelle notification ; l'administrateur vérifie dans Neero et clique **Valider** : l'accès s'active pour un mois. Une référence ne peut servir qu'une fois.
+5. Trois jours avant chaque échéance, les relances quotidiennes créent la demande de renouvellement, préviennent l'administrateur et relancent le client par e-mail jusqu'au paiement.
+
+**Configuration** (variables de l'API) :
+
+| Variable | Rôle |
+|---|---|
+| `PLATFORM_ADMIN_EMAILS` | e-mails ayant accès à /admin/paiements (bouton « Admin » dans l'en-tête) |
+| `TELEGRAM_BOT_TOKEN` | jeton du bot créé avec @BotFather ; la conversation se relie ensuite depuis l'écran admin |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients (Gmail : `smtp.gmail.com`, `465`, mot de passe d'application) |
+| `PAYMENT_MODE` | `online` pour réactiver Notch Pay / Stripe (voir ci-dessous) |
+
+Sans SMTP, le client retrouve son lien sur sa page Abonnement et l'administrateur l'envoie par WhatsApp en un clic. L'envoi WhatsApp entièrement automatique exigerait l'API WhatsApp Business (payante).
+
+**Tester** : `api/scripts/fake-telegram-server.py` simule Telegram et `api/scripts/manual-payment-flow-test.js` rejoue le parcours complet (45 vérifications). Mode d'emploi en tête du script.
+
+## Paiement en ligne par Notch Pay (désactivé, `PAYMENT_MODE=online`)
+
+Notch Pay permet le paiement immédiat par MTN Mobile Money, Orange Money ou carte bancaire, sur la page hébergée par Notch Pay. Chaque mois se paie à l'avance, sans prélèvement automatique.
 
 **Connecter le compte Notch Pay**
 
-1. Tableau de bord Notch Pay → **Paramètres → Développeurs** : copier la **clé publique** dans `NOTCHPAY_PUBLIC_KEY` (clé de test pour essayer, clé de production ensuite).
-2. Déclarer le webhook `https://<adresse-de-l-api>/api/webhooks/notchpay` (événements de paiement) et copier la **clé de hachage** dans `NOTCHPAY_HASH_KEY`.
-3. Redémarrer (ou redéployer) l'API : le bouton « Payer (Mobile Money ou carte) » apparaît sur la page Abonnement.
+1. Tableau de bord Notch Pay → **Paramètres → Développeurs** : copier la **clé publique** dans `NOTCHPAY_PUBLIC_KEY`.
+2. Déclarer le webhook `https://<adresse-de-l-api>/api/webhooks/notchpay` et copier la **clé de hachage** dans `NOTCHPAY_HASH_KEY`.
+3. Mettre `PAYMENT_MODE=online` et redéployer l'API.
 
-Sécurité : ni le retour du navigateur ni le webhook n'activent seuls un abonnement ; la transaction est toujours relue chez Notch Pay (statut, montant, devise, référence).
-
-**Tester sans compte** : `api/scripts/fake-notchpay-server.py` simule l'API Notch Pay et `api/scripts/notchpay-flow-test.js` rejoue le cycle complet (15 vérifications). Mode d'emploi en tête du script.
+Sécurité : ni le retour du navigateur ni le webhook n'activent seuls un abonnement ; la transaction est toujours relue chez Notch Pay. Test sans compte : `api/scripts/fake-notchpay-server.py` et `api/scripts/notchpay-flow-test.js`.
 
 ## Paiement par carte (Stripe, facultatif)
 
@@ -165,7 +187,7 @@ Le FCFA n'a pas de sous-unité : les centimes servent uniquement à la précisio
    - format du cachet fiscal / QR code de la facture normalisée.
 2. **Vérifier Flutterwave** : couverture réelle MTN MoMo et Orange Money au Cameroun, frais par transaction, paiement récurrent.
 3. **Faire un paiement Stripe de test** (clé `sk_test_…`, carte `4242 4242 4242 4242`) avant de passer aux clés réelles, et vérifier dans Stripe que les webhooks arrivent bien (statut 200).
-4. **Choisir le canal de notification** : `api/src/subscription/subscription-cron.service.ts` contient deux méthodes `dispatch*` qui ne font que journaliser (WhatsApp, SMS ou e-mail).
+4. **Rappels fiscaux** : `dispatchTaxReminder` (`api/src/subscription/subscription-cron.service.ts`) ne fait encore que journaliser ; les relances d'abonnement, elles, partent par e-mail.
 5. **Servir l'API et le front en HTTPS**, derrière un reverse proxy (ajuster `TRUST_PROXY_HOPS`).
 
 ## Reste à construire

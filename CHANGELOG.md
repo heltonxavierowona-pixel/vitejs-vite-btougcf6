@@ -1,5 +1,15 @@
 # Journal des corrections
 
+## Paiement par lien Neero (paiements en ligne suspendus)
+
+- Paiements en ligne désactivés par défaut (`PAYMENT_MODE`), code Notch Pay et Stripe conservé pour les réactiver.
+- Le client choisit sa formule : demande « en attente de paiement », message « Votre lien de paiement vous sera envoyé sous quelques heures ».
+- Notification Telegram instantanée à l'administrateur (client, projet, offre, montant), e-mail en secours.
+- Écran **/admin/paiements** : coller le lien Neero (envoyé par e-mail, affiché au client, message WhatsApp prêt), valider ou refuser la référence de transaction, historique.
+- Le client saisit sa référence ; une référence ne sert qu'une fois ; validation tracée au journal d'audit.
+- Échéances : demande de renouvellement créée trois jours avant, liste envoyée à l'administrateur, relances e-mail au client.
+- Site public et CGV mis à jour ; faux serveur Telegram et scénario de 45 vérifications.
+
 ## Paiement par Notch Pay
 
 - Abonnements payés par Notch Pay (MTN Mobile Money, Orange Money, carte), moyen de paiement proposé en premier.

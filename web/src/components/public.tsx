@@ -69,7 +69,7 @@ export function PublicFooter() {
       </div>
       <p className="max-w-6xl mx-auto px-4 sm:px-6 pb-8 text-xs text-inksoft">
         © {new Date().getFullYear()} {c.legalName}. Tous droits réservés. Paiements sécurisés par
-        Notch Pay (MTN Mobile Money, Orange Money, carte bancaire).
+        Mobile Money (MTN, Orange).
       </p>
     </footer>
   );

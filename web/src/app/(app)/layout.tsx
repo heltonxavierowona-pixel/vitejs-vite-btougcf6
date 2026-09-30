@@ -80,6 +80,17 @@ export default function AppLayout({
               <span className="block">{roleLabel[current.role]}</span>
             </span>
 
+            {user?.isPlatformAdmin && (
+              <Link
+                href="/admin/paiements"
+                className={`h-8 px-3 flex items-center text-sm font-medium rounded-[4px] ${
+                  pathname.startsWith('/admin') ? 'bg-primarysoft text-primary' : 'text-inksoft hover:text-ink hover:bg-surface'
+                }`}
+              >
+                Admin
+              </Link>
+            )}
+
             <Button variant="ghost" onClick={logout} className="h-8 px-3">
               Déconnexion
             </Button>

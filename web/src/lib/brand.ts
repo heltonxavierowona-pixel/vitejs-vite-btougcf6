@@ -29,7 +29,7 @@ export interface CompanyInfo {
  *  (mentions légales, CGV, contact).
  *
  *  ⚠️ À RENSEIGNER avant la mise en ligne : les prestataires de
- *  paiement (Notch Pay…) vérifient que
+ *  paiement (Neero…) vérifient que
  *  ces informations correspondent à celles de votre compte.
  *  Une valeur vide masque la ligne correspondante.
  * ==========================================================

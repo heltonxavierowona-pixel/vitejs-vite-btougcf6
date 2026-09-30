@@ -14,6 +14,7 @@ import {
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 
+import { isPlatformAdmin } from './platform-admin';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_TRIAL_PLAN, PLANS } from '../subscription/plans';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
@@ -367,9 +368,10 @@ export class AuthService {
     return slug;
   }
 
-  private sanitize<T extends { passwordHash: string }>(user: T) {
+  private sanitize<T extends { passwordHash: string; email: string }>(user: T) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, ...safe } = user;
-    return safe;
+    // Affiche l'accès à l'écran d'administration de la plateforme.
+    return { ...safe, isPlatformAdmin: isPlatformAdmin(user.email) };
   }
 }

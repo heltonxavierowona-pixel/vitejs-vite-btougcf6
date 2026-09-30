@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import {
   PaymentProvider,
+  PaymentRequestStatus,
   PaymentStatus,
   PlanCode,
+  Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -31,8 +33,18 @@ export class SubscriptionService {
     private readonly notchpay: NotchPayService,
   ) {}
 
-  /** Moyens de paiement configurés sur ce serveur. */
+  /**
+   * Mode de paiement. Par défaut « manual » : l'administrateur envoie
+   * un lien de paiement Neero (voir ManualPaymentService). « online »
+   * réactive les paiements en ligne (Notch Pay, Stripe, Flutterwave).
+   */
+  get onlinePaymentsEnabled(): boolean {
+    return process.env.PAYMENT_MODE === 'online';
+  }
+
+  /** Moyens de paiement en ligne actifs sur ce serveur. */
   paymentProviders(): PaymentProvider[] {
+    if (!this.onlinePaymentsEnabled) return [];
     return [
       ...(this.notchpay.isEnabled ? [PaymentProvider.NOTCHPAY] : []),
       ...(this.stripeBilling.isEnabled ? [PaymentProvider.STRIPE] : []),
@@ -53,6 +65,7 @@ export class SubscriptionService {
     if (!organization) throw new NotFoundException('Organisation introuvable');
 
     return {
+      paymentMode: this.onlinePaymentsEnabled ? 'online' : 'manual',
       providers: this.paymentProviders(),
       plans: plansFor(organization.type).map((plan) => ({
         ...plan,
@@ -76,13 +89,14 @@ export class SubscriptionService {
 
     if (!subscription) return null;
 
-    const [entityCount, userCount] = await Promise.all([
+    const [entityCount, userCount, paymentRequest] = await Promise.all([
       this.prisma.entity.count({
         where: { organizationId, deletedAt: null, isActive: true },
       }),
       this.prisma.membership.count({
         where: { organizationId, deletedAt: null },
       }),
+      this.openPaymentRequest(organizationId),
     ]);
 
     const daysLeft = Math.ceil(
@@ -103,7 +117,38 @@ export class SubscriptionService {
       daysLeft,
       needsRenewal: daysLeft <= 7,
       canWrite: canUseSubscription(subscription),
+      paymentRequest: paymentRequest && {
+        ...paymentRequest,
+        planLabel: PLANS[paymentRequest.plan].label,
+      },
     };
+  }
+
+  /** Demande de paiement manuelle en cours, s'il y en a une. */
+  openPaymentRequest(organizationId: string) {
+    return this.prisma.paymentRequest.findFirst({
+      where: {
+        organizationId,
+        status: {
+          in: [
+            PaymentRequestStatus.AWAITING_LINK,
+            PaymentRequestStatus.LINK_SENT,
+            PaymentRequestStatus.REFERENCE_SUBMITTED,
+          ],
+        },
+      },
+      select: {
+        id: true,
+        plan: true,
+        amount: true,
+        kind: true,
+        status: true,
+        paymentLink: true,
+        transactionRef: true,
+        rejectionReason: true,
+        createdAt: true,
+      },
+    });
   }
 
   // ----------------------------------------------------------
@@ -128,32 +173,7 @@ export class SubscriptionService {
       requestedProvider ??
       this.paymentProviders().find((p) => p !== PaymentProvider.STRIPE) ??
       PaymentProvider.FLUTTERWAVE;
-    const organization = await this.prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: { subscription: true },
-    });
-    if (!organization) throw new NotFoundException('Organisation introuvable');
-
-    const plan = PLANS[planCode];
-    if (!plan) throw new BadRequestException('Plan inconnu');
-
-    // Un cabinet ne peut pas souscrire un plan PME et inversement.
-    if (plan.audience !== organization.type) {
-      throw new BadRequestException(
-        'Ce plan ne correspond pas à votre type de compte.',
-      );
-    }
-
-    // Un déclassement ne doit pas laisser des entités orphelines.
-    const entityCount = await this.prisma.entity.count({
-      where: { organizationId, deletedAt: null, isActive: true },
-    });
-    if (plan.maxEntities !== UNLIMITED && entityCount > plan.maxEntities) {
-      throw new BadRequestException(
-        `Ce plan est limité à ${plan.maxEntities} dossiers, ` +
-          `vous en avez ${entityCount}. Archivez-en avant de changer de plan.`,
-      );
-    }
+    const { organization, plan } = await this.assertPlanAllowed(organizationId, planCode);
 
     const current = organization.subscription;
     const paysByCard =
@@ -226,6 +246,38 @@ export class SubscriptionService {
     });
 
     return { paymentId: payment.id, txRef, paymentUrl, plan };
+  }
+
+  /** Contrôles communs à tout changement de formule. */
+  async assertPlanAllowed(organizationId: string, planCode: PlanCode) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      include: { subscription: true },
+    });
+    if (!organization) throw new NotFoundException('Organisation introuvable');
+
+    const plan = PLANS[planCode];
+    if (!plan) throw new BadRequestException('Plan inconnu');
+
+    // Un cabinet ne peut pas souscrire un plan PME et inversement.
+    if (plan.audience !== organization.type) {
+      throw new BadRequestException(
+        'Ce plan ne correspond pas à votre type de compte.',
+      );
+    }
+
+    // Un déclassement ne doit pas laisser des entités orphelines.
+    const entityCount = await this.prisma.entity.count({
+      where: { organizationId, deletedAt: null, isActive: true },
+    });
+    if (plan.maxEntities !== UNLIMITED && entityCount > plan.maxEntities) {
+      throw new BadRequestException(
+        `Ce plan est limité à ${plan.maxEntities} dossiers, ` +
+          `vous en avez ${entityCount}. Archivez-en avant de changer de plan.`,
+      );
+    }
+
+    return { organization, plan };
   }
 
   /**
@@ -325,51 +377,61 @@ export class SubscriptionService {
       });
       if (claimed.count === 0) return null;
 
-      const existing = await tx.subscription.findUnique({
-        where: { organizationId: payment.organizationId },
-      });
-
-      // Un renouvellement anticipé du MÊME plan prolonge la période
-      // en cours — sinon le client perd des jours. Un changement de
-      // plan démarre une nouvelle période.
-      const now = new Date();
-      const extend =
-        existing &&
-        existing.plan === planCode &&
-        existing.status !== SubscriptionStatus.TRIALING &&
-        existing.currentPeriodEnd > now;
-      const base = extend ? existing.currentPeriodEnd : now;
-
-      const periodEnd = new Date(base);
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
-
-      const data = {
-        plan: planCode,
-        status: SubscriptionStatus.ACTIVE,
-        provider: payment.provider,
-        cancelAtPeriodEnd: false,
-        maxEntities: plan.maxEntities,
-        maxUsers: plan.maxUsers,
-        priceAmount: plan.priceMonthly,
-        currentPeriodStart: extend ? existing.currentPeriodStart : now,
-        currentPeriodEnd: periodEnd,
-        gracePeriodEnd: null,
-        remindersSent: 0,
-        lastReminderAt: null,
-        cancelledAt: null,
-      };
-
-      return existing
-        ? tx.subscription.update({ where: { id: existing.id }, data })
-        : tx.subscription.create({
-            data: { organizationId: payment.organizationId, ...data },
-          });
+      return this.activatePaidPeriod(tx, payment.organizationId, planCode, payment.provider);
     });
 
     if (!result) {
       return { success: true, alreadyProcessed: true, paymentId: payment.id };
     }
     return { success: true, subscription: result };
+  }
+
+  /**
+   * Ouvre (ou prolonge) un mois payé. À appeler dans la transaction
+   * qui marque le paiement comme réussi.
+   */
+  async activatePaidPeriod(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    planCode: PlanCode,
+    provider: PaymentProvider,
+  ) {
+    const plan = PLANS[planCode];
+    const existing = await tx.subscription.findUnique({ where: { organizationId } });
+
+    // Un renouvellement anticipé du MÊME plan prolonge la période
+    // en cours — sinon le client perd des jours. Un changement de
+    // plan démarre une nouvelle période.
+    const now = new Date();
+    const extend =
+      existing &&
+      existing.plan === planCode &&
+      existing.status !== SubscriptionStatus.TRIALING &&
+      existing.currentPeriodEnd > now;
+    const base = extend ? existing.currentPeriodEnd : now;
+
+    const periodEnd = new Date(base);
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+    const data = {
+      plan: planCode,
+      status: SubscriptionStatus.ACTIVE,
+      provider,
+      cancelAtPeriodEnd: false,
+      maxEntities: plan.maxEntities,
+      maxUsers: plan.maxUsers,
+      priceAmount: plan.priceMonthly,
+      currentPeriodStart: extend ? existing.currentPeriodStart : now,
+      currentPeriodEnd: periodEnd,
+      gracePeriodEnd: null,
+      remindersSent: 0,
+      lastReminderAt: null,
+      cancelledAt: null,
+    };
+
+    return existing
+      ? tx.subscription.update({ where: { id: existing.id }, data })
+      : tx.subscription.create({ data: { organizationId, ...data } });
   }
 
   /** Paiement Notch Pay : Mobile Money (MTN, Orange) ou carte. */

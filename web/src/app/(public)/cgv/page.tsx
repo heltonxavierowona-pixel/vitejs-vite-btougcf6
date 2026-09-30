@@ -57,9 +57,13 @@ export default function TermsPage() {
       <h2>4. Paiement</h2>
       <ul>
         <li>
-          Les paiements sont traités par <strong>Notch Pay</strong>, prestataire de paiement
-          établi au Cameroun, par <strong>MTN Mobile Money</strong>, <strong>Orange Money</strong>{' '}
-          ou <strong>carte bancaire</strong>.
+          Après le choix d’une formule, un lien de paiement sécurisé <strong>Neero</strong> est
+          envoyé au client par e-mail ou WhatsApp, et affiché sur sa page Abonnement. Le paiement
+          s’effectue par <strong>MTN Mobile Money</strong> ou <strong>Orange Money</strong>.
+        </li>
+        <li>
+          Le client saisit ensuite la référence de sa transaction ; l’abonnement est activé dès
+          vérification du paiement.
         </li>
         <li>
           Chaque mois est payé à l’avance. Aucun prélèvement automatique n’est effectué : un
@@ -69,8 +73,8 @@ export default function TermsPage() {
       </ul>
       <p>
         {brand.name} n’a jamais accès aux numéros de carte ni aux identifiants Mobile Money, saisis
-        exclusivement sur la page sécurisée de Notch Pay. Un reçu est disponible pour chaque
-        paiement.
+        exclusivement sur la page sécurisée du prestataire de paiement. Un reçu est disponible
+        pour chaque paiement.
       </p>
 
       <h2>5. Défaut de paiement</h2>
