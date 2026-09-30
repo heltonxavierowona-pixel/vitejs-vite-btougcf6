@@ -94,7 +94,7 @@ npm run dev
 Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé à la main (paiements en ligne désactivés) :
 
 1. Le client choisit sa formule sur la page Abonnement. Sa demande passe « en attente de paiement » et il lit « Votre lien de paiement vous sera envoyé sous quelques heures » (également par e-mail).
-2. L'administrateur reçoit une notification Telegram : client, projet, offre, montant.
+2. L'administrateur reçoit une notification (Telegram, WhatsApp ou e-mail) : client, projet, offre, montant.
 3. Il génère le lien dans l'app Neero et le colle dans **/admin/paiements** : le client le reçoit par e-mail, le voit sur sa page Abonnement, et un bouton prépare le message WhatsApp.
 4. Le client paie puis saisit la référence de transaction. Nouvelle notification ; l'administrateur vérifie dans Neero et clique **Valider** : l'accès s'active pour un mois. Une référence ne peut servir qu'une fois.
 5. Trois jours avant chaque échéance, les relances quotidiennes créent la demande de renouvellement, préviennent l'administrateur et relancent le client par e-mail jusqu'au paiement.
@@ -104,7 +104,8 @@ Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé
 | Variable | Rôle |
 |---|---|
 | `PLATFORM_ADMIN_EMAILS` | e-mails ayant accès à /admin/paiements (bouton « Admin » dans l'en-tête) |
-| `TELEGRAM_BOT_TOKEN` | jeton du bot créé avec @BotFather ; la conversation se relie ensuite depuis l'écran admin |
+| `WHATSAPP_NOTIFY_PHONE`, `WHATSAPP_NOTIFY_APIKEY` | notifications WhatsApp vers votre numéro via CallMeBot (gratuit) : envoyez « I allow callmebot to send me messages » au numéro indiqué sur callmebot.com, qui répond la clé |
+| `TELEGRAM_BOT_TOKEN` | jeton du bot créé avec @BotFather ; la conversation se relie ensuite depuis l'écran admin | (prioritaire sur WhatsApp) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients (Gmail : `smtp.gmail.com`, `465`, mot de passe d'application) |
 | `PAYMENT_MODE` | `online` pour réactiver Notch Pay / Stripe (voir ci-dessous) |
 

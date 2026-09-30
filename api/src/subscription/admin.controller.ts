@@ -92,6 +92,7 @@ export class AdminController {
     return {
       telegramBot: this.notifier.telegramConfigured,
       telegramChat: !!(await this.notifier.telegramChatId()),
+      whatsapp: this.notifier.whatsappConfigured,
       email: this.notifier.emailConfigured,
     };
   }

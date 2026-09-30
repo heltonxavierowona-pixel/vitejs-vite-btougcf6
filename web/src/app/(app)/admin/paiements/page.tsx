@@ -46,6 +46,7 @@ interface PaymentRequest {
 interface NotificationStatus {
   telegramBot: boolean;
   telegramChat: boolean;
+  whatsapp?: boolean;
   email: boolean;
 }
 
@@ -456,6 +457,10 @@ function NotificationsPanel({
       <div className="p-4 space-y-3 text-sm">
         <ul className="space-y-1">
           <li>
+            {status.whatsapp ? '✅' : '⚠️'} WhatsApp :{' '}
+            {status.whatsapp ? 'actif, les demandes arrivent sur votre WhatsApp.' : 'non configuré.'}
+          </li>
+          <li>
             {ready ? '✅' : '⚠️'} Telegram :{' '}
             {ready
               ? 'actif, vous êtes prévenu sur votre téléphone.'
@@ -469,11 +474,11 @@ function NotificationsPanel({
           </li>
         </ul>
 
-        {!status.telegramBot && (
+        {!status.whatsapp && !ready && (
           <ol className="list-decimal pl-5 space-y-1 text-inksoft">
-            <li>Dans Telegram, ouvrez @BotFather, envoyez /newbot et suivez les étapes.</li>
-            <li>Copiez le jeton du bot dans Vercel (projet numera-api) : variable TELEGRAM_BOT_TOKEN, puis redéployez.</li>
-            <li>Revenez ici pour relier votre conversation.</li>
+            <li>Enregistrez le numéro de CallMeBot dans vos contacts (voir callmebot.com).</li>
+            <li>Envoyez-lui sur WhatsApp : « I allow callmebot to send me messages ». Il vous répond votre clé (APIKEY).</li>
+            <li>Dans Vercel (projet numera-api), ajoutez WHATSAPP_NOTIFY_APIKEY avec cette clé, puis redéployez.</li>
           </ol>
         )}
         {status.telegramBot && !status.telegramChat && (

@@ -12,8 +12,8 @@ const TELEGRAM_CHAT_KEY = 'telegram.chatId';
  *  NOTIFICATIONS
  * ============================================================
  *
- *  - Administrateur : bot Telegram (instantané, gratuit), ou
- *    e-mail si Telegram n'est pas configuré ou échoue.
+ *  - Administrateur : bot Telegram, sinon WhatsApp (CallMeBot,
+ *    gratuit, vers son propre numéro), sinon e-mail.
  *  - Client : e-mail (SMTP, par exemple Gmail avec un mot de
  *    passe d'application).
  *
@@ -23,6 +23,7 @@ const TELEGRAM_CHAT_KEY = 'telegram.chatId';
  *  Variables :
  *   TELEGRAM_BOT_TOKEN  jeton du bot (BotFather)
  *   TELEGRAM_CHAT_ID    facultatif : détecté depuis l'écran admin
+ *   WHATSAPP_NOTIFY_PHONE, WHATSAPP_NOTIFY_APIKEY  (CallMeBot)
  *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM
  * ============================================================
  */
@@ -37,9 +38,12 @@ export class NotifierService {
   //  Administrateur
   // ----------------------------------------------------------
 
-  /** Prévient l'administrateur : Telegram, sinon e-mail. */
+  /** Prévient l'administrateur : Telegram, sinon WhatsApp, sinon e-mail. */
   async notifyAdmin(subject: string, lines: string[]): Promise<boolean> {
     if (await this.sendTelegram(`<b>${escapeHtml(subject)}</b>\n${lines.map(escapeHtml).join('\n')}`)) {
+      return true;
+    }
+    if (await this.sendWhatsApp(`*${subject}*\n${lines.join('\n')}`)) {
       return true;
     }
     const admins = platformAdminEmails();
@@ -116,6 +120,36 @@ export class NotifierService {
     }
   }
 
+  get whatsappConfigured(): boolean {
+    return !!(process.env.WHATSAPP_NOTIFY_PHONE && process.env.WHATSAPP_NOTIFY_APIKEY);
+  }
+
+  /**
+   * WhatsApp vers le numéro de l'administrateur, via CallMeBot :
+   * service gratuit, activé en envoyant « I allow callmebot to send
+   * me messages » à son numéro depuis WhatsApp (il répond la clé).
+   */
+  async sendWhatsApp(text: string): Promise<boolean> {
+    if (!this.whatsappConfigured) return false;
+    try {
+      const phone = (process.env.WHATSAPP_NOTIFY_PHONE ?? '').replace(/[^\d+]/g, '');
+      const url =
+        `${callmebotApi()}/whatsapp.php?phone=${encodeURIComponent(phone)}` +
+        `&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(process.env.WHATSAPP_NOTIFY_APIKEY ?? '')}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      const body = await response.text().catch(() => '');
+      // CallMeBot répond 200 même en cas d'erreur : on lit le texte.
+      if (!response.ok || /invalid|error|not (allowed|activated)/i.test(body)) {
+        this.logger.error(`WhatsApp (CallMeBot) a refusé le message (HTTP ${response.status})`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(`WhatsApp (CallMeBot) injoignable : ${describe(error)}`);
+      return false;
+    }
+  }
+
   // ----------------------------------------------------------
   //  Client
   // ----------------------------------------------------------
@@ -176,6 +210,13 @@ function telegramApi() {
     return process.env.TELEGRAM_API_URL;
   }
   return 'https://api.telegram.org';
+}
+
+function callmebotApi() {
+  if (process.env.NODE_ENV !== 'production' && process.env.CALLMEBOT_API_URL) {
+    return process.env.CALLMEBOT_API_URL;
+  }
+  return 'https://api.callmebot.com';
 }
 
 function describe(error: unknown) {
