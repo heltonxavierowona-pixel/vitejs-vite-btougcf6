@@ -44,13 +44,26 @@ Deno.serve(handler(async (req) => {
   if (!pages.data.length) throw new HttpError(400, 'Aucune Page Facebook autorisée')
 
   const connected: { channel: string; label: string }[] = []
+  const warnings: string[] = []
 
   for (const page of pages.data) {
-    // Abonner la Page à nos webhooks (messages entrants + commentaires).
-    await graph(`${page.id}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,feed`, {
-      method: 'POST',
-      token: page.access_token,
-    })
+    // Abonner la Page à nos webhooks : messages + commentaires, sinon messages seuls
+    // (les commentaires exigent pages_manage_metadata dans la configuration).
+    let subscribed = ''
+    for (const fields of ['messages,messaging_postbacks,feed', 'messages,messaging_postbacks']) {
+      try {
+        await graph(`${page.id}/subscribed_apps?subscribed_fields=${fields}`, { method: 'POST', token: page.access_token })
+        subscribed = fields
+        break
+      } catch (e) {
+        console.error('subscribed_apps', page.id, fields, e instanceof Error ? e.message : e)
+      }
+    }
+    if (!subscribed.includes('feed')) {
+      warnings.push(subscribed
+        ? `${page.name} : messages privés actifs, commentaires inactifs (autorisation pages_manage_metadata manquante)`
+        : `${page.name} : abonnement aux messages impossible (autorisations pages_manage_metadata / pages_messaging manquantes)`)
+    }
 
     const accounts = [{ channel: 'facebook', external_id: page.id, label: page.name }]
     if (page.instagram_business_account) {
@@ -96,5 +109,5 @@ Deno.serve(handler(async (req) => {
     }
   }
 
-  return json({ connected })
+  return json({ connected, warnings })
 }))

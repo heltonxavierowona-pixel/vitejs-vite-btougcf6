@@ -35,9 +35,10 @@ export default function ChannelsPage() {
       return
     }
     run('meta', async () => {
-      const { connected } = await connectMeta(code, metaRedirectUri())
+      const { connected, warnings } = await connectMeta(code, metaRedirectUri())
+      const warn = (warnings ?? []).length ? ` · Attention : ${warnings.join(' ; ')}` : ''
       return connected.length
-        ? `Connecté : ${connected.map((c: { label: string }) => c.label).join(', ')}`
+        ? `Connecté : ${connected.map((c: { label: string }) => c.label).join(', ')}${warn}`
         : 'Aucune Page connectée : elle est peut-être déjà reliée à un autre compte Numera Agentic.'
     })
   }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
