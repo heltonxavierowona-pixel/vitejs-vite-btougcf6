@@ -144,13 +144,15 @@ export default function App() {
   const ent = useEntitlements(!supabase || !!session)
   const admin = useIsAdmin(!supabase || !!session)
   const queue = usePaymentQueue(admin)
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
 
   const Legal = LEGAL[pathname.replace(/\/$/, '') || '/']
   if (Legal) return <Legal loggedIn={!!session} />
   if (supabase && session === undefined) return null
   if (supabase && !session) return pathname === '/' ? <LandingPage /> : <LoginPage />
   if (pathname === '/connexion') return <Navigate to="/" replace />
+  // Retour de Facebook (redirection OAuth sur la racine) : direction la page Canaux.
+  if (pathname === '/' && search.includes('state=numera_meta_')) return <Navigate to={`/canaux${search}`} replace />
 
   return (
     <div className="shell">

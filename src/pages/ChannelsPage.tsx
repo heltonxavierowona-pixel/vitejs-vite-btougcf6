@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { CHANNELS, type ChannelId } from '../data/channels'
 import { connectMeta, connectWhatsApp, isDemo, listAccounts } from '../lib/api'
-import { facebookLoginForBusiness, metaConfigured, whatsappEmbeddedSignup } from '../lib/meta'
+import { facebookLoginRedirect, META_STATE_PREFIX, metaConfigured, metaRedirectUri, metaStateOk, whatsappEmbeddedSignup } from '../lib/meta'
 import type { ChannelAccount } from '../lib/types'
 
 export default function ChannelsPage() {
@@ -9,10 +10,37 @@ export default function ChannelsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
 
+  const [params, setParams] = useSearchParams()
+  const handled = useRef(false)
+
   const reload = () => listAccounts().then(setAccounts)
   useEffect(() => {
     reload()
   }, [])
+
+  // Retour de Facebook Login for Business (redirection) : échange du code côté serveur.
+  useEffect(() => {
+    const state = params.get('state')
+    if (handled.current || !state?.startsWith(META_STATE_PREFIX)) return
+    handled.current = true
+    const code = params.get('code')
+    const denied = params.get('error_description') ?? params.get('error_reason')
+    setParams({}, { replace: true })
+    if (!code) {
+      Promise.resolve().then(() => setMessage({ kind: 'error', text: `Connexion Facebook annulée${denied ? ` : ${denied}` : ''}` }))
+      return
+    }
+    if (!metaStateOk(state)) {
+      Promise.resolve().then(() => setMessage({ kind: 'error', text: 'Retour de Facebook non reconnu : recommencez la connexion.' }))
+      return
+    }
+    run('meta', async () => {
+      const { connected } = await connectMeta(code, metaRedirectUri())
+      return connected.length
+        ? `Connecté : ${connected.map((c: { label: string }) => c.label).join(', ')}`
+        : 'Aucune Page connectée : elle est peut-être déjà reliée à un autre compte Numera Agentic.'
+    })
+  }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(key: string, fn: () => Promise<string>) {
     setBusy(key)
@@ -34,11 +62,15 @@ export default function ChannelsPage() {
       return `WhatsApp connecté : ${saved.display_phone}`
     })
 
-  const connectFbIg = () =>
-    run('meta', async () => {
-      const { connected } = await connectMeta(await facebookLoginForBusiness())
-      return `Connecté : ${connected.map((c: { label: string }) => c.label).join(', ')}`
-    })
+  const connectFbIg = () => {
+    setBusy('meta')
+    try {
+      facebookLoginRedirect()
+    } catch (e) {
+      setBusy(null)
+      setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
+    }
+  }
 
   const canConnect = metaConfigured && !isDemo
   const connectedOf = (id: ChannelId) => accounts.filter((a) => a.channel === id)

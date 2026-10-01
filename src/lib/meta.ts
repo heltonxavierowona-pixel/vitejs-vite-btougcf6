@@ -102,6 +102,35 @@ export function whatsappEmbeddedSignup(coexistence: boolean): Promise<WhatsAppSi
     .finally(() => window.removeEventListener('message', onMessage))
 }
 
+// Facebook Login for Business par redirection (fiable sur téléphone, où la fenêtre du SDK
+// ne renvoie pas toujours le code). Retour sur la racine du site, déclarée dans
+// « URI de redirection OAuth valides », puis sur Canaux avec ?code=…&state=numera_meta_….
+export const META_STATE_PREFIX = 'numera_meta_'
+export const metaRedirectUri = () => `${window.location.origin}/`
+
+export function facebookLoginRedirect(): void {
+  if (!APP_ID) throw new Error('VITE_META_APP_ID manquant')
+  if (!LOGIN_CONFIG_ID) throw new Error('VITE_META_LOGIN_CONFIG_ID manquant')
+  const state = META_STATE_PREFIX + crypto.randomUUID().replace(/-/g, '')
+  try { sessionStorage.setItem('numera_meta_state', state) } catch { /* navigation privée : contrôle ignoré */ }
+  const url = new URL(`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`)
+  url.searchParams.set('client_id', APP_ID)
+  url.searchParams.set('redirect_uri', metaRedirectUri())
+  url.searchParams.set('config_id', LOGIN_CONFIG_ID)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('override_default_response_type', 'true')
+  url.searchParams.set('state', state)
+  window.location.href = url.toString()
+}
+
+// Vérifie le state du retour (si le navigateur l'a gardé).
+export function metaStateOk(state: string | null): boolean {
+  if (!state?.startsWith(META_STATE_PREFIX)) return false
+  let saved: string | null = null
+  try { saved = sessionStorage.getItem('numera_meta_state'); sessionStorage.removeItem('numera_meta_state') } catch { /* ignoré */ }
+  return !saved || saved === state
+}
+
 export function facebookLoginForBusiness(): Promise<string> {
   if (!LOGIN_CONFIG_ID) return Promise.reject(new Error('VITE_META_LOGIN_CONFIG_ID manquant'))
   return login(LOGIN_CONFIG_ID)

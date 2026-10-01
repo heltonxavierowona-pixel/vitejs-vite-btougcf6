@@ -12,13 +12,15 @@ interface Page {
 
 Deno.serve(handler(async (req) => {
   const { orgId, userId } = await requireUser(req)
-  const { code } = await req.json()
+  const { code, redirect_uri } = (await req.json()) as { code?: string; redirect_uri?: string }
   if (!code) throw new HttpError(400, 'code manquant')
 
   const tokenUrl = new URL(`${GRAPH}/oauth/access_token`)
   tokenUrl.searchParams.set('client_id', Deno.env.get('META_APP_ID')!)
   tokenUrl.searchParams.set('client_secret', Deno.env.get('META_APP_SECRET')!)
   tokenUrl.searchParams.set('code', code)
+  // Connexion par redirection : Meta exige la même redirect_uri qu'à l'autorisation.
+  if (redirect_uri) tokenUrl.searchParams.set('redirect_uri', redirect_uri)
   const tokenRes = await fetch(tokenUrl)
   const tokenData = await tokenRes.json()
   if (!tokenRes.ok || !tokenData.access_token) {

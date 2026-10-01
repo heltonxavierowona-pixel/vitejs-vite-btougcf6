@@ -116,10 +116,15 @@ export async function connectWhatsApp(payload: {
   return data
 }
 
-export async function connectMeta(code: string) {
+export async function connectMeta(code: string, redirectUri?: string) {
   if (!supabase) throw new Error('Mode démo : configurez Supabase pour connecter une Page')
-  const { data, error } = await supabase.functions.invoke('meta-connect', { body: { code } })
-  if (error) throw error
+  const { data, error } = await supabase.functions.invoke('meta-connect', { body: { code, redirect_uri: redirectUri } })
+  if (error) {
+    // Message lisible renvoyé par la fonction (ex. « Aucune Page Facebook autorisée »).
+    const ctx = (error as { context?: Response }).context
+    const detail = ctx && typeof ctx.json === 'function' ? await ctx.json().catch(() => null) : null
+    throw new Error(detail?.error ?? error.message)
+  }
   return data
 }
 
