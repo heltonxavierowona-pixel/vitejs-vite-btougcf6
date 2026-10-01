@@ -56,7 +56,7 @@ Ces étapes se font une seule fois, pour toute la plateforme. Les utilisateurs, 
    - une pour **WhatsApp Embedded Signup** (variation « WhatsApp Embedded Signup », token utilisateur système) → `VITE_META_WA_CONFIG_ID` ;
    - une pour **Pages + Instagram** (permissions `pages_show_list`, `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments`) → `VITE_META_LOGIN_CONFIG_ID`.
 5. **Domaines autorisés** : ajoute le domaine de la plateforme dans les réglages de l'app (obligatoire pour le SDK JavaScript).
-6. **Webhooks** : URL `https://n8n.tondomaine.com/webhook/meta`, jeton = `META_VERIFY_TOKEN`. Abonnements : WhatsApp `messages` (+ `smb_message_echoes` pour la coexistence) ; Page `messages`, `messaging_postbacks`, `feed` ; Instagram `messages`, `comments`.
+6. **Webhooks** : URL `https://<projet>.supabase.co/functions/v1/meta-webhook` (Edge Function `meta-webhook`, qui remplace le workflow n8n 01 ; déployée avec `--no-verify-jwt`), jeton de vérification = `platform_settings.meta_verify_token`, signature vérifiée avec le secret `META_APP_SECRET`. Abonnements : WhatsApp `messages` (+ `smb_message_echoes` pour la coexistence) ; Page `messages`, `messaging_postbacks`, `feed` ; Instagram `messages`, `comments`.
 7. Lancer dès maintenant la **vérification d'entreprise** et l'**App Review** (voir `00-architecture-saas.md` §6).
 
 ### B. Supabase
