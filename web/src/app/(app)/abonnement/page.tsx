@@ -12,6 +12,7 @@ import {
   Field,
   Input,
   Loading,
+  Select,
   Modal,
   PageHeader,
   Panel,
@@ -42,6 +43,17 @@ interface PaymentRequest {
   paymentLink: string | null;
   transactionRef: string | null;
   rejectionReason: string | null;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  projectName?: string | null;
+}
+
+interface SubscribeContact {
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  projectName: string;
 }
 
 interface Subscription {
@@ -98,7 +110,8 @@ export default function SubscriptionPage() {
 }
 
 function SubscriptionView() {
-  const { current } = useAuth();
+  const { current, user } = useAuth();
+  const [choosing, setChoosing] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -151,15 +164,16 @@ function SubscriptionView() {
   }, [error, notice]);
 
   /** Redirige vers la page de paiement hébergée par le prestataire. */
-  async function subscribe(planCode: string, provider?: Provider) {
+  async function subscribe(planCode: string, provider?: Provider, contact?: SubscribeContact) {
     setBusy(`${planCode}-${provider ?? ''}`);
     setError(null);
     setNotice(null);
     try {
       const result = await api.post<{ paymentUrl: string | null; message?: string }>(
         `${base}/checkout`,
-        { plan: planCode, ...(provider && { provider }) },
+        { plan: planCode, ...(provider && { provider }), ...(contact ?? {}) },
       );
+      setChoosing(null);
       if (result.paymentUrl) {
         // On ne manipule jamais les identifiants de carte ou de
         // Mobile Money : tout se passe chez le prestataire de paiement.
@@ -404,11 +418,8 @@ function SubscriptionView() {
                     ) : (
                       <Button
                         variant={renewable || !isCurrent ? 'primary' : 'secondary'}
-                        onClick={() => subscribe(plan.code)}
-                        disabled={
-                          busy !== null ||
-                          (!!request && request.status !== 'AWAITING_LINK')
-                        }
+                        onClick={() => setChoosing(plan.code)}
+                        disabled={busy !== null || request?.status === 'REFERENCE_SUBMITTED'}
                       >
                         {busy === `${plan.code}-`
                           ? 'Envoi…'
@@ -461,6 +472,22 @@ function SubscriptionView() {
           'Par MTN Mobile Money ou Orange Money : le Mobile Money ne permet pas le prélèvement automatique, vous recevrez un rappel avant chaque échéance. '}
         Les montants sont facturés en FCFA.
       </Alert>
+
+      {choosing && (
+        <SubscribeModal
+          plans={plans.filter((p) => p.priceMonthly > 0)}
+          initialPlan={choosing}
+          busy={busy !== null}
+          defaults={{
+            contactName: request?.contactName ?? (user ? `${user.firstName} ${user.lastName}` : ''),
+            contactEmail: request?.contactEmail ?? user?.email ?? '',
+            contactPhone: request?.contactPhone ?? user?.phone ?? '',
+            projectName: request?.projectName ?? current?.organizationName ?? '',
+          }}
+          onClose={() => setChoosing(null)}
+          onSubmit={(planCode, contact) => void subscribe(planCode, undefined, contact)}
+        />
+      )}
 
       {confirmCancel && subscription && (
         <Modal title="Résilier l’abonnement" onClose={() => setConfirmCancel(false)}>
@@ -631,5 +658,82 @@ function PaymentRequestPanel({
         )}
       </div>
     </Panel>
+  );
+}
+
+// ------------------------------------------------------------
+
+/**
+ * Formulaire de souscription (paiement par lien) : coordonnées où
+ * recevoir le lien de paiement et la confirmation, projet et offre.
+ */
+function SubscribeModal({
+  plans,
+  initialPlan,
+  defaults,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  plans: Plan[];
+  initialPlan: string;
+  defaults: SubscribeContact;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (planCode: string, contact: SubscribeContact) => void;
+}) {
+  const [plan, setPlan] = useState(initialPlan);
+  const [form, setForm] = useState<SubscribeContact>(defaults);
+  const selected = plans.find((p) => p.code === plan);
+  const set = (key: keyof SubscribeContact) => (event: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: event.target.value }));
+  const valid =
+    form.contactName.trim().length >= 2 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail.trim()) &&
+    /^[+\d][\d\s.-]{5,24}$/.test(form.contactPhone.trim());
+
+  return (
+    <Modal title="Demande d’abonnement" onClose={onClose} wide>
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (valid) onSubmit(plan, form);
+        }}
+      >
+        <p className="text-sm text-inksoft">
+          Vous recevez votre lien de paiement sécurisé par e-mail, et il s’affiche aussi sur cette page.
+        </p>
+        <Field label="Nom complet">
+          <Input value={form.contactName} onChange={set('contactName')} autoComplete="name" required minLength={2} maxLength={120} />
+        </Field>
+        <Field label="E-mail" hint="Le lien de paiement et la confirmation y seront envoyés.">
+          <Input type="email" value={form.contactEmail} onChange={set('contactEmail')} autoComplete="email" required maxLength={180} />
+        </Field>
+        <Field label="Téléphone (WhatsApp)">
+          <Input type="tel" value={form.contactPhone} onChange={set('contactPhone')} autoComplete="tel" placeholder="+237 6XX XX XX XX" required />
+        </Field>
+        <Field label="Projet ou entreprise">
+          <Input value={form.projectName} onChange={set('projectName')} maxLength={150} />
+        </Field>
+        <Field label="Offre choisie">
+          <Select value={plan} onChange={(e) => setPlan(e.target.value)}>
+            {plans.map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.label} — {formatMoney(p.priceMonthly)} / mois
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button type="submit" disabled={busy || !valid}>
+            {busy ? 'Envoi…' : `Recevoir mon lien${selected ? ` (${formatMoney(selected.priceMonthly)})` : ''}`}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

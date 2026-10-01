@@ -29,7 +29,26 @@ const OPEN: PaymentRequestStatus[] = [
   PaymentRequestStatus.REFERENCE_SUBMITTED,
 ];
 
+const DAY = 86_400_000;
 const PLAN_LINK_PREFIX = 'neero.link.';
+
+/**
+ * Durée de validité d'un lien Neero préparé (en jours). Un lien plus
+ * ancien n'est plus envoyé automatiquement ; l'administratrice est
+ * prévenue un jour avant pour le renouveler.
+ */
+export function planLinkValidityDays(): number {
+  const days = Number(process.env.PLAN_LINK_VALIDITY_DAYS);
+  return Number.isInteger(days) && days >= 2 ? days : 10;
+}
+
+/** Coordonnées saisies dans le formulaire de souscription. */
+export interface SubscriptionContact {
+  name: string;
+  email: string;
+  phone: string;
+  project?: string;
+}
 
 /** Délai annoncé au client pour recevoir son lien. */
 export const LINK_DELAY_MESSAGE =
@@ -69,7 +88,12 @@ export class ManualPaymentService {
   //  Côté client
   // ----------------------------------------------------------
 
-  async request(organizationId: string, planCode: PlanCode, user: { id: string }) {
+  async request(
+    organizationId: string,
+    planCode: PlanCode,
+    user: { id: string },
+    contact?: SubscriptionContact,
+  ) {
     const { organization, plan } = await this.subscriptions.assertPlanAllowed(
       organizationId,
       planCode,
@@ -79,9 +103,23 @@ export class ManualPaymentService {
     }
 
     const planLink = await this.planLink(planCode);
+    const contactData = contact
+      ? {
+          contactName: contact.name,
+          contactEmail: contact.email,
+          contactPhone: contact.phone,
+          projectName: contact.project || null,
+        }
+      : {};
     const open = await this.findOpen(organizationId);
     if (open) {
-      if (open.plan === planCode) return this.requestResponse(open);
+      if (open.plan === planCode) {
+        // Même formule : seules les coordonnées sont mises à jour.
+        if (!contact) return this.requestResponse(open);
+        return this.requestResponse(
+          await this.prisma.paymentRequest.update({ where: { id: open.id }, data: contactData }),
+        );
+      }
       // Une référence saisie signifie un paiement peut-être déjà fait :
       // on ne change plus la formule sous les pieds de l'administrateur.
       if (open.status === PaymentRequestStatus.REFERENCE_SUBMITTED) {
@@ -100,6 +138,7 @@ export class ManualPaymentService {
           paymentLink: null,
           linkSentAt: null,
           rejectionReason: null,
+          ...contactData,
         },
         include: { organization: true },
       });
@@ -121,6 +160,7 @@ export class ManualPaymentService {
           plan: planCode,
           amount: plan.priceMonthly,
           kind: PaymentRequestKind.NEW,
+          ...contactData,
         },
         include: { organization: true },
       });
@@ -144,7 +184,7 @@ export class ManualPaymentService {
       await this.deliver(created, planLink);
     } else {
       await this.notifier.sendEmail(
-        await this.clientEmail(organizationId, organization.billingEmail),
+        await this.requestEmail(created),
         `${BRAND.name} — demande d’abonnement reçue`,
         [
           'Bonjour,',
@@ -157,15 +197,19 @@ export class ManualPaymentService {
       );
     }
 
+    const expiredLink = !planLink && (await this.hasPlanLink(planCode));
     await this.notifier.notifyAdmin('Nouvelle demande d’abonnement', [
-      `Client : ${requester ? `${requester.firstName} ${requester.lastName}` : '—'}`,
-      `Projet : ${organization.name} (${organization.type === 'CABINET' ? 'cabinet' : 'entreprise'})`,
+      `Client : ${contact?.name ?? (requester ? `${requester.firstName} ${requester.lastName}` : '—')}`,
+      `Projet : ${contact?.project || organization.name} (${organization.type === 'CABINET' ? 'cabinet' : 'entreprise'})`,
       `Offre : ${plan.label}`,
       `Montant : ${money(plan.priceMonthly)}`,
-      `Contact : ${organization.billingPhone || requester?.phone || '—'} · ${organization.billingEmail || requester?.email || '—'}`,
+      `Téléphone : ${contact?.phone || organization.billingPhone || requester?.phone || '—'}`,
+      `E-mail : ${contact?.email || organization.billingEmail || requester?.email || '—'}`,
       planLink
         ? `Lien Neero envoyé automatiquement. Vérifiez le paiement puis validez : ${adminUrl()}`
-        : `Générer le lien Neero puis le coller ici : ${adminUrl()}`,
+        : expiredLink
+          ? `⚠️ Le lien Neero de cette formule a expiré : renouvelez-le, puis envoyez-le : ${adminUrl()}`
+          : `Générer le lien Neero puis le coller ici : ${adminUrl()}`,
     ]);
 
     return this.requestResponse(await this.reload(created.id));
@@ -276,7 +320,7 @@ export class ManualPaymentService {
 
     return requests.map((request) => {
       const requester = request.requestedById ? byId.get(request.requestedById) : undefined;
-      const phone = request.organization.billingPhone || requester?.phone;
+      const phone = request.contactPhone || request.organization.billingPhone || requester?.phone;
       return {
         ...request,
         planLabel: PLANS[request.plan].label,
@@ -317,16 +361,32 @@ export class ManualPaymentService {
     const settings = await this.prisma.platformSetting.findMany({
       where: { key: { startsWith: PLAN_LINK_PREFIX } },
     });
-    const byPlan = new Map(settings.map((s) => [s.key.slice(PLAN_LINK_PREFIX.length), s.value]));
+    const byPlan = new Map(settings.map((s) => [s.key.slice(PLAN_LINK_PREFIX.length), s]));
+    const validity = planLinkValidityDays();
+    const now = Date.now();
     return Object.values(PLANS)
       .filter((plan) => plan.priceMonthly > 0)
-      .map((plan) => ({
-        plan: plan.code,
-        label: plan.label,
-        audience: plan.audience,
-        amount: plan.priceMonthly,
-        paymentLink: byPlan.get(plan.code) ?? null,
-      }));
+      .map((plan) => {
+        const setting = byPlan.get(plan.code);
+        const expiresAt = setting ? new Date(setting.updatedAt.getTime() + validity * DAY) : null;
+        return {
+          plan: plan.code,
+          label: plan.label,
+          audience: plan.audience,
+          amount: plan.priceMonthly,
+          paymentLink: setting?.value ?? null,
+          setAt: setting?.updatedAt ?? null,
+          expiresAt,
+          // « renew » : à renouveler (dernier jour) ; « expired » : n'est plus envoyé.
+          state: !expiresAt
+            ? 'missing'
+            : expiresAt.getTime() <= now
+              ? 'expired'
+              : expiresAt.getTime() - now <= DAY
+                ? 'renew'
+                : 'ok',
+        };
+      });
   }
 
   async setPlanLink(planCode: PlanCode, paymentLink: string | null) {
@@ -345,16 +405,51 @@ export class ManualPaymentService {
     return this.planLinks();
   }
 
+  /** Lien préparé encore valable pour cette formule, sinon null. */
   private async planLink(planCode: PlanCode): Promise<string | null> {
     const setting = await this.prisma.platformSetting.findUnique({
       where: { key: `${PLAN_LINK_PREFIX}${planCode}` },
     });
-    return setting?.value ?? null;
+    if (!setting) return null;
+    const expired = setting.updatedAt.getTime() + planLinkValidityDays() * DAY <= Date.now();
+    return expired ? null : setting.value;
+  }
+
+  private async hasPlanLink(planCode: PlanCode) {
+    return !!(await this.prisma.platformSetting.findUnique({ where: { key: `${PLAN_LINK_PREFIX}${planCode}` } }));
+  }
+
+  /**
+   * Rappel quotidien : liens Neero qui expirent sous 24 h (à
+   * renouveler aujourd'hui) ou déjà expirés.
+   */
+  async remindPlanLinksRenewal() {
+    const links = await this.planLinks();
+    const due = links.filter((l) => l.state === 'renew' || l.state === 'expired');
+    if (!due.length) return 0;
+    await this.notifier.notifyAdmin('Liens Neero à renouveler', [
+      ...due.map((l) =>
+        l.state === 'expired'
+          ? `• ${l.label} (${money(l.amount)}) : expiré, n’est plus envoyé aux clients`
+          : `• ${l.label} (${money(l.amount)}) : expire le ${date(l.expiresAt!)}`,
+      ),
+      `Créez les nouveaux liens dans Neero puis collez-les ici : ${adminUrl()}`,
+    ]);
+    return due.length;
   }
 
   /** Enregistre le lien sur la demande et l'envoie au client. */
   private async deliver(
-    request: { id: string; organizationId: string; plan: PlanCode; amount: number; requestedById: string | null; organization: { name: string; billingEmail: string; billingPhone: string } },
+    request: {
+      id: string;
+      organizationId: string;
+      plan: PlanCode;
+      amount: number;
+      requestedById: string | null;
+      contactEmail?: string | null;
+      contactPhone?: string | null;
+      organization: { name: string; billingEmail: string; billingPhone: string };
+    },
     paymentLink: string,
   ) {
     await this.prisma.paymentRequest.update({
@@ -363,13 +458,14 @@ export class ManualPaymentService {
     });
 
     const message = this.linkMessage(request.organization.name, request.plan, request.amount, paymentLink);
-    const recipient = await this.clientEmail(request.organizationId, request.organization.billingEmail);
+    const recipient = await this.requestEmail(request);
     const emailed = await this.notifier.sendEmail(
       recipient,
       `${BRAND.name} — votre lien de paiement`,
       message,
     );
-    const phone = request.organization.billingPhone || (await this.requesterPhone(request.requestedById));
+    const phone =
+      request.contactPhone || request.organization.billingPhone || (await this.requesterPhone(request.requestedById));
 
     return {
       emailed,
@@ -455,7 +551,7 @@ export class ManualPaymentService {
       { after: { plan: request.plan, amount: request.amount, transactionRef } },
     );
 
-    const recipient = await this.clientEmail(request.organizationId, request.organization.billingEmail);
+    const recipient = await this.requestEmail(request);
     await this.notifier.sendEmail(
       recipient,
       `${BRAND.name} — paiement confirmé`,
@@ -491,7 +587,7 @@ export class ManualPaymentService {
       },
     });
 
-    const recipient = await this.clientEmail(request.organizationId, request.organization.billingEmail);
+    const recipient = await this.requestEmail(request);
     await this.notifier.sendEmail(
       recipient,
       `${BRAND.name} — référence de paiement à vérifier`,
@@ -541,12 +637,19 @@ export class ManualPaymentService {
     for (const subscription of due) {
       let renewal;
       try {
+        // Coordonnées reprises de la dernière demande du client.
+        const last = await this.prisma.paymentRequest.findFirst({
+          where: { organizationId: subscription.organizationId, contactEmail: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { contactName: true, contactEmail: true, contactPhone: true, projectName: true },
+        });
         renewal = await this.prisma.paymentRequest.create({
           data: {
             organizationId: subscription.organizationId,
             plan: subscription.plan,
             amount: PLANS[subscription.plan].priceMonthly,
             kind: PaymentRequestKind.RENEWAL,
+            ...(last ?? {}),
           },
           include: { organization: true },
         });
@@ -656,6 +759,15 @@ export class ManualPaymentService {
       'Après le paiement, saisissez la référence de transaction sur la page Abonnement ' +
         `de votre espace (${frontendUrl()}/abonnement) : votre accès sera activé dès vérification.`,
     ].join('\n');
+  }
+
+  /** E-mail saisi dans le formulaire, sinon celui de facturation ou du propriétaire. */
+  private async requestEmail(request: {
+    organizationId: string;
+    contactEmail?: string | null;
+    organization: { billingEmail: string };
+  }) {
+    return request.contactEmail || this.clientEmail(request.organizationId, request.organization.billingEmail);
   }
 
   /** E-mail de facturation, sinon celui du propriétaire du compte. */

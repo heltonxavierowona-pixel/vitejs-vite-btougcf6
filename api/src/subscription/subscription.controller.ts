@@ -16,12 +16,14 @@ import {
 } from '@nestjs/common';
 import { PaymentProvider, PlanCode } from '@prisma/client';
 import {
+  IsEmail,
   IsEnum,
   IsIn,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
@@ -47,6 +49,13 @@ class CheckoutDto extends SelectPlanDto {
   @IsOptional()
   @IsIn([PaymentProvider.NEERO, PaymentProvider.NOTCHPAY, PaymentProvider.STRIPE, PaymentProvider.FLUTTERWAVE])
   provider?: PaymentProvider;
+
+  // Formulaire de souscription (paiement par lien) : coordonnées où
+  // envoyer le lien et la confirmation.
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(120) contactName?: string;
+  @IsOptional() @IsEmail({}, { message: 'Adresse e-mail invalide' }) @MaxLength(180) contactEmail?: string;
+  @IsOptional() @IsString() @Matches(/^[+\d][\d\s.-]{5,24}$/, { message: 'Numéro de téléphone invalide' }) contactPhone?: string;
+  @IsOptional() @IsString() @MaxLength(150) projectName?: string;
 }
 
 class ConfirmNotchPayDto {
@@ -116,7 +125,16 @@ export class SubscriptionController {
     await this.assertOwner(user.id, organizationId);
     // Paiements en ligne désactivés : demande de lien Neero.
     if (!this.subscriptions.onlinePaymentsEnabled && PLANS[dto.plan]?.priceMonthly > 0) {
-      return this.manualPayments.request(organizationId, dto.plan, user);
+      const contact =
+        dto.contactName && dto.contactEmail && dto.contactPhone
+          ? {
+              name: dto.contactName.trim(),
+              email: dto.contactEmail.trim().toLowerCase(),
+              phone: dto.contactPhone.trim(),
+              project: dto.projectName?.trim() || undefined,
+            }
+          : undefined;
+      return this.manualPayments.request(organizationId, dto.plan, user, contact);
     }
     return this.subscriptions.initiateCheckout(
       organizationId,

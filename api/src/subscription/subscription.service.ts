@@ -154,6 +154,10 @@ export class SubscriptionService {
         paymentLink: true,
         transactionRef: true,
         rejectionReason: true,
+        contactName: true,
+        contactEmail: true,
+        contactPhone: true,
+        projectName: true,
         createdAt: true,
       },
     });

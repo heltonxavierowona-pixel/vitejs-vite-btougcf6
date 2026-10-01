@@ -34,6 +34,10 @@ interface PaymentRequest {
   updatedAt: string;
   whatsappUrl: string | null;
   requester: { name: string; email: string } | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string | null;
   organization: {
     name: string;
     type: 'ENTREPRISE' | 'CABINET';
@@ -268,7 +272,8 @@ function RequestCard({
             <p className="font-medium">{org.name}</p>
             <p className="text-xs text-inksoft">
               {org.type === 'CABINET' ? 'Cabinet' : 'Entreprise'}
-              {request.requester && ` · ${request.requester.name}`}
+              {(request.contactName || request.requester) && ` · ${request.contactName ?? request.requester?.name}`}
+              {request.projectName && request.projectName !== org.name && ` · projet « ${request.projectName} »`}
               {' · '}
               {request.kind === 'RENEWAL' ? 'Renouvellement' : 'Nouvelle demande'} du{' '}
               {formatDate(request.createdAt)}
@@ -285,13 +290,13 @@ function RequestCard({
             {request.planLabel}
           </span>
           <span className="font-semibold tabular">{formatMoney(request.amount)}</span>
-          {org.billingPhone && (
-            <a href={`tel:${org.billingPhone}`} className="text-primary">
-              {org.billingPhone}
+          {(request.contactPhone || org.billingPhone) && (
+            <a href={`tel:${request.contactPhone || org.billingPhone}`} className="text-primary">
+              {request.contactPhone || org.billingPhone}
             </a>
           )}
-          {(org.billingEmail || request.requester?.email) && (
-            <span className="text-inksoft break-all">{org.billingEmail || request.requester?.email}</span>
+          {(request.contactEmail || org.billingEmail || request.requester?.email) && (
+            <span className="text-inksoft break-all">{request.contactEmail || org.billingEmail || request.requester?.email}</span>
           )}
         </div>
 
@@ -457,35 +462,28 @@ function NotificationsPanel({
   return (
     <Panel title="Notifications">
       <div className="p-4 space-y-3 text-sm">
-        <ul className="space-y-1">
-          <li>
-            {status.whatsapp ? '✅' : '⚠️'} WhatsApp :{' '}
-            {status.whatsapp ? 'actif, les demandes arrivent sur votre WhatsApp.' : 'non configuré.'}
-          </li>
-          <li>
-            {ready ? '✅' : '⚠️'} Telegram :{' '}
-            {ready
-              ? 'actif, vous êtes prévenu sur votre téléphone.'
-              : status.telegramBot
-                ? 'bot configuré, conversation à relier.'
-                : 'non configuré.'}
-          </li>
-          <li>
-            {status.email ? '✅' : '⚠️'} E-mail aux clients :{' '}
-            {status.email ? 'actif.' : 'non configuré (les clients voient leur lien sur leur page Abonnement ; utilisez WhatsApp).'}
-          </li>
-        </ul>
+        <p>
+          {status.email ? '✅' : '⚠️'} <strong>E-mail (Google)</strong> :{' '}
+          {status.email
+            ? 'actif. Vous recevez une alerte à chaque demande et à chaque référence de paiement ; vos clients reçoivent leur lien et leurs confirmations.'
+            : 'non configuré (variables SMTP dans Vercel). Les clients voient leur lien sur leur page Abonnement.'}
+        </p>
 
-        {!status.whatsapp && !ready && (
-          <ol className="list-decimal pl-5 space-y-1 text-inksoft">
-            <li>Enregistrez le numéro de CallMeBot dans vos contacts (voir callmebot.com).</li>
-            <li>Envoyez-lui sur WhatsApp : « I allow callmebot to send me messages ». Il vous répond votre clé (APIKEY).</li>
-            <li>Dans Vercel (projet numera-api), ajoutez WHATSAPP_NOTIFY_APIKEY avec cette clé, puis redéployez.</li>
-          </ol>
-        )}
-        {status.telegramBot && !status.telegramChat && (
-          <p className="text-inksoft">Ouvrez votre bot dans Telegram, envoyez-lui « /start », puis cliquez sur « Relier ».</p>
-        )}
+        <details className="text-inksoft">
+          <summary className="cursor-pointer">Autres canaux (facultatif) : WhatsApp, Telegram</summary>
+          <ul className="mt-2 space-y-1">
+            <li>
+              {status.whatsapp ? '✅' : '–'} WhatsApp (CallMeBot) : {status.whatsapp ? 'actif.' : 'non configuré.'}
+            </li>
+            <li>
+              {ready ? '✅' : '–'} Telegram :{' '}
+              {ready ? 'actif.' : status.telegramBot ? 'bot configuré, conversation à relier.' : 'non configuré.'}
+            </li>
+          </ul>
+          {status.telegramBot && !status.telegramChat && (
+            <p className="mt-2">Ouvrez votre bot dans Telegram, envoyez-lui « /start », puis cliquez sur « Relier ».</p>
+          )}
+        </details>
 
         <div className="flex flex-wrap gap-2">
           {status.telegramBot && (
@@ -520,6 +518,9 @@ interface PlanLink {
   audience: 'ENTREPRISE' | 'CABINET';
   amount: number;
   paymentLink: string | null;
+  setAt: string | null;
+  expiresAt: string | null;
+  state: 'missing' | 'ok' | 'renew' | 'expired';
 }
 
 /** Liens Neero préparés : envoyés au client dès sa demande. */
@@ -533,6 +534,7 @@ function PlanLinksPanel({
   const [links, setLinks] = useState<PlanLink[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState<string | null>(null);
 
   // Chargé une seule fois : onError change à chaque rendu du parent.
   useEffect(() => {
@@ -552,6 +554,7 @@ function PlanLinksPanel({
       });
       setLinks(updated);
       setDrafts((d) => ({ ...d, [plan.plan]: '' }));
+      setReplacing(null);
       await onDone(
         value.trim()
           ? `Lien enregistré pour ${plan.label} : il sera envoyé automatiquement à chaque demande.`
@@ -565,7 +568,8 @@ function PlanLinksPanel({
   }
 
   if (!links) return null;
-  const configured = links.filter((l) => l.paymentLink).length;
+  const configured = links.filter((l) => l.state === 'ok' || l.state === 'renew').length;
+  const due = links.filter((l) => l.state === 'renew' || l.state === 'expired');
 
   return (
     <Panel title={`Liens Neero par formule (${configured}/${links.length})`}>
@@ -573,8 +577,14 @@ function PlanLinksPanel({
         <p className="text-inksoft">
           Créez dans Neero un lien de paiement par formule, au bon montant, et collez-le ici. Le
           client le reçoit alors instantanément, même la nuit : il ne vous reste qu’à vérifier le
-          paiement et valider.
+          paiement et valider. Un lien reste valable 10 jours : renouvelez-le tous les 9 jours (vous
+          recevez un rappel par e-mail).
         </p>
+        {due.length > 0 && (
+          <p className="rounded-[4px] bg-soonbg text-soon px-3 py-2">
+            {due.length} lien(s) à renouveler : {due.map((l) => l.label).join(', ')}.
+          </p>
+        )}
         <ul className="divide-y divide-line border-y border-line">
           {links.map((link) => {
             const draft = drafts[link.plan] ?? '';
@@ -589,20 +599,38 @@ function PlanLinksPanel({
                   </span>
                   <span className="tabular font-semibold">{formatMoney(link.amount)}</span>
                 </div>
-                {link.paymentLink ? (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-safe">✅</span>
-                    <a href={link.paymentLink} target="_blank" rel="noopener noreferrer" className="text-primary underline break-all">
-                      {link.paymentLink}
-                    </a>
-                    <button
-                      type="button"
-                      className="text-xs text-critical underline"
-                      disabled={busy !== null}
-                      onClick={() => void save(link, '')}
-                    >
-                      Retirer
-                    </button>
+                {link.paymentLink && replacing !== link.plan ? (
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>{link.state === 'ok' ? '✅' : link.state === 'renew' ? '⏳' : '⛔'}</span>
+                      <a href={link.paymentLink} target="_blank" rel="noopener noreferrer" className="text-primary underline break-all">
+                        {link.paymentLink}
+                      </a>
+                    </div>
+                    <p className={`text-xs ${link.state === 'ok' ? 'text-inksoft' : 'text-soon font-medium'}`}>
+                      {link.setAt && `Ajouté le ${formatDate(link.setAt)} · `}
+                      {link.state === 'expired'
+                        ? 'expiré : n’est plus envoyé aux clients'
+                        : link.expiresAt && `${link.state === 'renew' ? 'à renouveler aujourd’hui, expire' : 'valable jusqu’au'} ${formatDate(link.expiresAt)}`}
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        className="text-xs text-primary underline"
+                        disabled={busy !== null}
+                        onClick={() => setReplacing(link.plan)}
+                      >
+                        Renouveler (coller le nouveau lien)
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-critical underline"
+                        disabled={busy !== null}
+                        onClick={() => void save(link, '')}
+                      >
+                        Retirer
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <form

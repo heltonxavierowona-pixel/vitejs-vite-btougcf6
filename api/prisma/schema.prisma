@@ -737,6 +737,12 @@ model PaymentRequest {
   kind   PaymentRequestKind   @default(NEW)
   status PaymentRequestStatus @default(AWAITING_LINK)
 
+  // Coordonnées saisies dans le formulaire de souscription
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  projectName  String?
+
   paymentLink String?
   linkSentAt  DateTime?
 

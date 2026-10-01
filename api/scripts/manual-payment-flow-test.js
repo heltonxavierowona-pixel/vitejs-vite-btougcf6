@@ -180,6 +180,39 @@ async function register(email, orgName, niu) {
   const cleared = await call('POST', '/admin/plan-links', { plan: 'PME_PRO', paymentLink: '' }, adminToken);
   check('lien préparé retiré', cleared.data.find((l) => l.plan === 'PME_PRO')?.paymentLink === null, cleared.data);
 
+  // --- Formulaire de souscription : coordonnées saisies ---
+  await call('POST', '/admin/plan-links', { plan: 'PME_STARTER', paymentLink: 'https://pay.neero.test/l/starter' }, adminToken);
+  const fourth = await register(`form-${run}@test.cm`, `Atelier ${run}`, `NFOR${run}`.toUpperCase());
+  const fourthBase = `/organizations/${fourth.org}/subscription`;
+  const badPhone = await call('POST', `${fourthBase}/checkout`, { plan: 'PME_STARTER', contactName: 'Jean', contactEmail: 'jean@test.cm', contactPhone: 'abc' }, fourth.token);
+  check('formulaire : téléphone invalide refusé', badPhone.status === 400, badPhone);
+  const formReq = await call('POST', `${fourthBase}/checkout`, {
+    plan: 'PME_STARTER', contactName: 'Jean Mbarga', contactEmail: `Contact-${run}@Atelier.cm`, contactPhone: '+237 690 00 00 01', projectName: 'Atelier couture',
+  }, fourth.token);
+  check('formulaire : demande avec coordonnées, lien instantané', formReq.data.paymentRequest?.status === 'LINK_SENT' && formReq.data.paymentRequest.contactEmail === `contact-${run}@atelier.cm` && formReq.data.paymentRequest.projectName === 'Atelier couture', formReq.data);
+  const tgForm = (await telegram()).slice(-2).map((m) => m.text).join('\n');
+  check('alerte admin : nom, projet, téléphone et e-mail du formulaire', tgForm.includes('Jean Mbarga') && tgForm.includes('Atelier couture') && tgForm.includes('+237 690 00 00 01') && tgForm.includes(`contact-${run}@atelier.cm`), tgForm);
+  const listForm = (await call('GET', '/admin/payment-requests', undefined, adminToken)).data.find((r) => r.organizationId === fourth.org);
+  check('écran admin : coordonnées et WhatsApp vers le numéro saisi', listForm?.contactName === 'Jean Mbarga' && /wa\.me\/237690000001/.test(listForm?.whatsappUrl ?? ''), listForm);
+
+  // --- Lien expiré (plus de 10 jours) : plus envoyé, rappel de renouvellement ---
+  sql(`update platform_settings set "updatedAt" = now() - interval '11 days' where key = 'neero.link.PME_STARTER'`);
+  const links = (await call('GET', '/admin/plan-links', undefined, adminToken)).data;
+  check('lien de plus de 10 jours signalé expiré', links.find((l) => l.plan === 'PME_STARTER')?.state === 'expired', links.find((l) => l.plan === 'PME_STARTER'));
+  const fifth = await register(`exp-${run}@test.cm`, `Salon ${run}`, `NEXP${run}`.toUpperCase());
+  const expReq = await call('POST', `/organizations/${fifth.org}/subscription/checkout`, { plan: 'PME_STARTER' }, fifth.token);
+  check('lien expiré non envoyé : la demande attend un nouveau lien', expReq.data.paymentRequest?.status === 'AWAITING_LINK', expReq.data);
+  check('alerte admin : lien expiré à renouveler', (await lastTelegram()).includes('a expiré'), await lastTelegram());
+  sql(`update platform_settings set "updatedAt" = now() - interval '9 days 6 hours' where key = 'neero.link.PME_STARTER'`);
+  const renewState = (await call('GET', '/admin/plan-links', undefined, adminToken)).data.find((l) => l.plan === 'PME_STARTER');
+  check('9e jour : lien « à renouveler » mais encore envoyé', renewState?.state === 'renew', renewState);
+  await call('GET', '/cron/dunning', undefined, undefined, { Authorization: `Bearer ${CRON_SECRET}` });
+  check('rappel quotidien : liens Neero à renouveler', (await telegram()).some((m) => m.text.includes('Liens Neero à renouveler') && m.text.includes('PME Essentiel')), (await telegram()).slice(-3));
+  await call('POST', '/admin/plan-links', { plan: 'PME_STARTER', paymentLink: 'https://pay.neero.test/l/starter-2' }, adminToken);
+  const renewed = (await call('GET', '/admin/plan-links', undefined, adminToken)).data.find((l) => l.plan === 'PME_STARTER');
+  check('lien renouvelé : à nouveau valable 10 jours', renewed?.state === 'ok' && Math.round((new Date(renewed.expiresAt) - Date.now()) / 86_400_000) === 10, renewed);
+  await call('POST', '/admin/plan-links', { plan: 'PME_STARTER', paymentLink: '' }, adminToken);
+
   // --- 5. Renouvellement ---
   sql(`update subscriptions set "currentPeriodEnd" = now() + interval '2 days' where "organizationId"='${client.org}'`);
   const unauthorized = await call('GET', '/cron/dunning');
