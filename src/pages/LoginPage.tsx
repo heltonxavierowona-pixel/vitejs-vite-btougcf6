@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { supabase } from '../lib/supabase'
 
@@ -42,6 +43,9 @@ export default function LoginPage() {
             <button className="btn">Recevoir mon lien de connexion</button>
           </>
         )}
+        <p className="muted small login-links">
+          <Link to="/">Découvrir Numera Agentic</Link> · <Link to="/confidentialite">Confidentialité</Link> · <Link to="/conditions">Conditions</Link>
+        </p>
       </form>
     </div>
   )

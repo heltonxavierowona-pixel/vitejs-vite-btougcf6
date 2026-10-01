@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import ChannelsPage from './pages/ChannelsPage'
@@ -18,7 +18,17 @@ import BillingPage from './pages/BillingPage'
 import AdminPage from './pages/AdminPage'
 import ReportsPage from './pages/ReportsPage'
 import Logo from './components/Logo'
+import LandingPage from './pages/public/LandingPage'
+import { DataDeletionPage, MentionsPage, PrivacyPage, TermsPage } from './pages/public/LegalPages'
 import './App.css'
+
+// Pages publiques, lisibles sans compte (exigées par Meta pour la vérification et l'App Review).
+const LEGAL: Record<string, (p: { loggedIn?: boolean }) => React.ReactElement> = {
+  '/mentions-legales': MentionsPage,
+  '/confidentialite': PrivacyPage,
+  '/conditions': TermsPage,
+  '/suppression-des-donnees': DataDeletionPage,
+}
 
 const NAV = [
   { to: '/', label: 'Vue d\'ensemble' },
@@ -134,9 +144,13 @@ export default function App() {
   const ent = useEntitlements(!supabase || !!session)
   const admin = useIsAdmin(!supabase || !!session)
   const queue = usePaymentQueue(admin)
+  const { pathname } = useLocation()
 
+  const Legal = LEGAL[pathname.replace(/\/$/, '') || '/']
+  if (Legal) return <Legal loggedIn={!!session} />
   if (supabase && session === undefined) return null
-  if (supabase && !session) return <LoginPage />
+  if (supabase && !session) return pathname === '/' ? <LandingPage /> : <LoginPage />
+  if (pathname === '/connexion') return <Navigate to="/" replace />
 
   return (
     <div className="shell">
