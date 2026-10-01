@@ -266,14 +266,58 @@ export interface Plan {
 export interface Entitlements {
   plan_id: string
   plan_name: string
-  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
-  provider: PaymentProvider | 'manual' | null
+  status: 'trialing' | 'pending_payment' | 'active' | 'past_due' | 'canceled' | 'expired'
+  provider: PaymentProvider | 'manual' | 'neero' | null
   trial_ends_at: string | null
   current_period_end: string | null
   cancel_at_period_end: boolean
   has_access: boolean
   limits: Plan['limits']
   usage: Plan['limits']
+}
+
+// Encaissement manuel : le client demande, le propriétaire envoie un lien Neero, le client
+// paie et déclare sa référence, le propriétaire valide.
+export type BillingMode = 'manual' | 'automatic'
+export type PaymentRequestStatus = 'awaiting_link' | 'link_sent' | 'reference_submitted' | 'validated' | 'canceled'
+
+export interface PaymentRequest {
+  id: string
+  plan_id: string
+  billing_interval: BillingInterval
+  currency: Currency
+  amount: number
+  kind: 'new' | 'renewal'
+  status: PaymentRequestStatus
+  contact_phone: string | null
+  payment_link: string | null
+  transaction_ref: string | null
+  rejection_reason: string | null
+  created_at: string
+  link_sent_at: string | null
+}
+
+export interface AdminPaymentRequest {
+  id: string
+  organization_id: string
+  organization: string
+  owner_email: string | null
+  plan_id: string
+  plan: string
+  interval: BillingInterval
+  currency: Currency
+  amount: number
+  kind: 'new' | 'renewal'
+  status: PaymentRequestStatus
+  contact_phone: string | null
+  payment_link: string | null
+  transaction_ref: string | null
+  rejection_reason: string | null
+  created_at: string
+  link_sent_at: string | null
+  ref_submitted_at: string | null
+  validated_at: string | null
+  current_period_end: string | null
 }
 
 export interface PaymentRow {

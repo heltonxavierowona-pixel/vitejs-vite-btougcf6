@@ -504,3 +504,38 @@ a.btn { text-decoration: none; display: inline-block; }
   .grant-form { grid-template-columns: minmax(0, 1fr); }
 }
 .card > h2 + .alert-list, .card > h2 + .table-wrap, .card > h2 + p { margin-top: 12px; }
+
+/* ---------- Encaissement manuel (lien de paiement) ---------- */
+.request-card { border-color: var(--warn); }
+.request-steps { list-style: none; margin: 4px 0 16px; padding: 0; display: grid; gap: 10px; counter-reset: step; }
+.request-steps li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: .92rem; }
+.request-steps li::before {
+  content: counter(step); display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--bg); border: 1px solid var(--border); font-size: .78rem; font-weight: 700; color: var(--muted);
+}
+.request-steps li.done { color: var(--text); }
+.request-steps li.done::before { content: '\2713'; background: var(--ok); border-color: var(--ok); color: #fff; }
+.request-steps li.current { color: var(--text); font-weight: 600; }
+.request-steps li.current::before { background: var(--brand); border-color: var(--brand); color: #fff; }
+.request-pay { display: grid; gap: 12px; justify-items: start; }
+.ref-form { display: grid; gap: 6px; width: 100%; }
+.ref-form label { font-size: .88rem; font-weight: 500; }
+.ref-row { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.ref-row input {
+  flex: 1 1 220px; min-width: 0; font: inherit; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+}
+.payment-queue .card-head { margin-bottom: 8px; }
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.queue-item { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.queue-awaiting_link { border-left: 3px solid #c62828; }
+.queue-reference_submitted { border-left: 3px solid var(--ok); }
+.queue-link_sent { border-left: 3px solid var(--brand); }
+.queue-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.queue-head .small { margin-top: 2px; }
+.queue-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.nav-admin .nav-badge, .payment-queue .nav-badge { background: #c62828; }
+@media (prefers-color-scheme: dark) {
+  .queue-awaiting_link { border-left-color: #ef5350; }
+}

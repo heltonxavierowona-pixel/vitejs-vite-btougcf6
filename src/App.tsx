@@ -10,7 +10,9 @@ import ProductsPage from './pages/ProductsPage'
 import ProspectsPage from './pages/ProspectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ValidationsPage from './pages/ValidationsPage'
-import { APPROVALS_CHANGED, BILLING_CHANGED, countPendingApprovals, getEntitlements, isPlatformAdmin } from './lib/api'
+import {
+  adminListPaymentRequests, APPROVALS_CHANGED, BILLING_CHANGED, countPendingApprovals, getEntitlements, isPlatformAdmin,
+} from './lib/api'
 import type { Entitlements } from './lib/types'
 import BillingPage from './pages/BillingPage'
 import AdminPage from './pages/AdminPage'
@@ -86,12 +88,35 @@ function useIsAdmin(enabled: boolean) {
   return admin
 }
 
+// Demandes d'abonnement qui attendent une action du propriétaire (badge du menu).
+function usePaymentQueue(enabled: boolean) {
+  const location = useLocation()
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const update = () => adminListPaymentRequests()
+      .then((rs) => setCount(rs.filter((r) => r.status === 'awaiting_link' || r.status === 'reference_submitted').length))
+      .catch(() => {})
+    update()
+    const timer = setInterval(update, 60_000)
+    window.addEventListener(BILLING_CHANGED, update)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(BILLING_CHANGED, update)
+    }
+  }, [enabled, location.pathname])
+  return count
+}
+
 function BillingBanner({ state }: { state: { e: Entitlements; trialDays: number | null } | null }) {
   const { pathname } = useLocation()
   if (!state || pathname === '/abonnement' || pathname === '/admin') return null
   const { e: ent, trialDays: days } = state
   let text: string | null = null
-  if (!ent.has_access) text = 'Votre abonnement est inactif : l\'agent est en pause. Choisissez une formule pour le relancer.'
+  if (ent.status === 'pending_payment') text = ent.has_access
+    ? 'Votre abonnement est en attente de paiement : suivez les étapes dans « Abonnement ».'
+    : 'Votre accès sera activé dès la validation de votre paiement : suivez les étapes dans « Abonnement ».'
+  else if (!ent.has_access) text = 'Votre abonnement est inactif : l\'agent est en pause. Choisissez une formule pour le relancer.'
   else if (ent.status === 'past_due') text = 'Le dernier paiement a échoué. Mettez à jour votre moyen de paiement pour éviter l\'interruption.'
   else if (ent.status === 'trialing' && days != null && days <= 3) text = `Votre essai gratuit se termine dans ${Math.max(days, 0)} jour(s).`
   if (!text) return null
@@ -108,6 +133,7 @@ export default function App() {
   const pending = usePendingApprovals(!supabase || !!session)
   const ent = useEntitlements(!supabase || !!session)
   const admin = useIsAdmin(!supabase || !!session)
+  const queue = usePaymentQueue(admin)
 
   if (supabase && session === undefined) return null
   if (supabase && !session) return <LoginPage />
@@ -125,7 +151,11 @@ export default function App() {
               {n.to === '/validations' && pending > 0 && <span className="nav-badge">{pending}</span>}
             </NavLink>
           ))}
-          {admin && <NavLink to="/admin" className="nav-admin">Espace propriétaire</NavLink>}
+          {admin && (
+            <NavLink to="/admin" className="nav-admin">
+              Espace propriétaire{queue > 0 && <span className="nav-badge">{queue}</span>}
+            </NavLink>
+          )}
         </nav>
         <div className="env">
           {session ? (

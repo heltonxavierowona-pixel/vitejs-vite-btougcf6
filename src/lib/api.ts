@@ -3,7 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AdminStats, BillingInterval, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
+  AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
   AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
@@ -972,6 +972,105 @@ export async function manageBilling(action: 'portal' | 'cancel'): Promise<string
   if (error) throw error
   window.dispatchEvent(new Event(BILLING_CHANGED))
   return (data as { url?: string }).url ?? null
+}
+
+// ---------- Encaissement manuel (lien de paiement Neero) ----------
+
+const requestDemo: { mine: PaymentRequest | null; admin: AdminPaymentRequest[] } = { mine: null, admin: [] }
+
+export async function getBillingMode(): Promise<BillingMode> {
+  if (!supabase) return 'manual'
+  const { data } = await supabase.from('platform_settings').select('value').eq('key', 'billing_mode').maybeSingle()
+  return data?.value === 'automatic' ? 'automatic' : 'manual'
+}
+
+// Dernière demande de l'organisation (ouverte ou non).
+export async function getMyPaymentRequest(): Promise<PaymentRequest | null> {
+  if (!supabase) return requestDemo.mine
+  const { data } = await supabase.from('payment_requests')
+    .select('id, plan_id, billing_interval, currency, amount, kind, status, contact_phone, payment_link, transaction_ref, rejection_reason, created_at, link_sent_at')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  return (data as PaymentRequest | null) ?? null
+}
+
+export async function requestSubscription(o: { plan: Plan; interval: BillingInterval; currency: Currency; phone: string }) {
+  if (!supabase) {
+    const now = new Date().toISOString()
+    requestDemo.mine = {
+      id: crypto.randomUUID(), plan_id: o.plan.id, billing_interval: o.interval, currency: o.currency,
+      amount: o.plan.prices[o.currency][o.interval], kind: 'new', status: 'awaiting_link', contact_phone: o.phone,
+      payment_link: null, transaction_ref: null, rejection_reason: null, created_at: now, link_sent_at: null,
+    }
+    requestDemo.admin = [{
+      ...requestDemo.mine, organization_id: 'demo', organization: 'Votre entreprise (démo)', owner_email: 'vous@exemple.cm',
+      plan: o.plan.name, interval: o.interval, ref_submitted_at: null, validated_at: null, current_period_end: null,
+    }, ...requestDemo.admin.filter((r) => r.organization_id !== 'demo')]
+    if (billingDemo.entitlements.status !== 'active') billingDemo.entitlements = { ...billingDemo.entitlements, status: 'pending_payment' }
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return
+  }
+  unwrap(await supabase.rpc('request_subscription', {
+    p_plan: o.plan.id, p_interval: o.interval, p_currency: o.currency, p_phone: o.phone,
+  }))
+  window.dispatchEvent(new Event(BILLING_CHANGED))
+}
+
+export async function submitPaymentReference(id: string, ref: string) {
+  if (!supabase) {
+    if (requestDemo.mine) requestDemo.mine = { ...requestDemo.mine, status: 'reference_submitted', transaction_ref: ref, rejection_reason: null }
+    requestDemo.admin = requestDemo.admin.map((r) => r.id === id ? { ...r, status: 'reference_submitted', transaction_ref: ref, ref_submitted_at: new Date().toISOString() } : r)
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return
+  }
+  unwrap(await supabase.rpc('submit_payment_reference', { p_request: id, p_ref: ref }))
+  window.dispatchEvent(new Event(BILLING_CHANGED))
+}
+
+export async function adminListPaymentRequests(): Promise<AdminPaymentRequest[]> {
+  if (!supabase) return requestDemo.admin
+  return (unwrap(await supabase.rpc('admin_payment_requests', { p_open_only: true })) ?? []) as AdminPaymentRequest[]
+}
+
+export async function adminSetPaymentLink(id: string, link: string) {
+  if (!supabase) {
+    const now = new Date().toISOString()
+    requestDemo.admin = requestDemo.admin.map((r) => r.id === id ? { ...r, status: 'link_sent', payment_link: link, link_sent_at: now } : r)
+    if (requestDemo.mine?.id === id) requestDemo.mine = { ...requestDemo.mine, status: 'link_sent', payment_link: link, link_sent_at: now }
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return
+  }
+  unwrap(await supabase.rpc('admin_set_payment_link', { p_request: id, p_link: link }))
+}
+
+export async function adminValidatePayment(id: string) {
+  if (!supabase) {
+    const r = requestDemo.admin.find((x) => x.id === id)
+    requestDemo.admin = requestDemo.admin.map((x) => x.id === id ? { ...x, status: 'validated', validated_at: new Date().toISOString() } : x)
+    if (requestDemo.mine?.id === id && r) {
+      requestDemo.mine = { ...requestDemo.mine, status: 'validated' }
+      const plan = demoPlans.find((p) => p.id === r.plan_id) ?? demoPlans[1]
+      billingDemo.entitlements = {
+        ...billingDemo.entitlements, plan_id: plan.id, plan_name: plan.name, status: 'active', provider: 'neero',
+        trial_ends_at: null, has_access: true, limits: plan.limits,
+        current_period_end: new Date(Date.now() + (r.interval === 'year' ? 365 : 30) * 86_400_000).toISOString(),
+      }
+      billingDemo.payments = [{ id: crypto.randomUUID(), provider: 'neero', amount: r.amount, currency: r.currency, status: 'succeeded', paid_at: new Date().toISOString() }, ...billingDemo.payments]
+    }
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return
+  }
+  unwrap(await supabase.rpc('admin_validate_payment', { p_request: id }))
+}
+
+export async function adminRejectPayment(id: string, reason: string) {
+  if (!supabase) {
+    const rejection = `${reason || 'Paiement introuvable'} (réf. ${requestDemo.admin.find((r) => r.id === id)?.transaction_ref ?? '—'})`
+    requestDemo.admin = requestDemo.admin.map((r) => r.id === id ? { ...r, status: 'link_sent', transaction_ref: null, rejection_reason: rejection } : r)
+    if (requestDemo.mine?.id === id) requestDemo.mine = { ...requestDemo.mine, status: 'link_sent', transaction_ref: null, rejection_reason: rejection }
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return
+  }
+  unwrap(await supabase.rpc('admin_reject_payment', { p_request: id, p_reason: reason }))
 }
 
 // ---------- Espace propriétaire ----------

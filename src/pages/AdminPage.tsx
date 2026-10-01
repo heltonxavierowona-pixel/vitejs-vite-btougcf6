@@ -1,8 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { DataTable, HBars, LineChart, StatTile } from '../components/Charts'
-import { adminGrant, getAdminStats, isDemo, listPlans } from '../lib/api'
+import {
+  adminGrant, adminListPaymentRequests, adminRejectPayment, adminSetPaymentLink, adminValidatePayment,
+  BILLING_CHANGED, getAdminStats, isDemo, listPlans,
+} from '../lib/api'
 import { fmt, pct } from '../lib/format'
-import type { AdminStats, AdminSubscription, Currency, Plan } from '../lib/types'
+import type { AdminPaymentRequest, AdminStats, AdminSubscription, Currency, Plan } from '../lib/types'
 
 // Espace propriétaire de la plateforme : réservé aux comptes de platform_admins.
 // Tous les montants sont convertis en FCFA (XAF) au taux défini dans platform_settings.
@@ -14,12 +17,124 @@ const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr
 
 const STATUS: Record<AdminSubscription['status'], { label: string; cls: string }> = {
   trialing: { label: 'Essai', cls: 'intent-curious' },
+  pending_payment: { label: 'Attend paiement', cls: 'intent-not_now' },
   active: { label: 'Actif', cls: 'intent-interested' },
   past_due: { label: 'Impayé', cls: 'intent-negative' },
   canceled: { label: 'Résilié', cls: 'intent-not_now' },
   expired: { label: 'Expiré', cls: 'intent-other' },
 }
-const PROVIDER: Record<string, string> = { flutterwave: 'Flutterwave', stripe: 'Stripe', paypal: 'PayPal', manual: 'Manuel' }
+const PROVIDER: Record<string, string> = { flutterwave: 'Flutterwave', stripe: 'Stripe', paypal: 'PayPal', manual: 'Manuel', neero: 'Neero' }
+
+const amountLabel = (n: number, c: string) => `${fmt(n)} ${c === 'XAF' ? 'FCFA' : c}`
+
+// Message prêt à envoyer au client depuis ton WhatsApp (en attendant l'API WhatsApp).
+function whatsappShare(r: AdminPaymentRequest, link: string): string | null {
+  const digits = (r.contact_phone ?? '').replace(/\D/g, '')
+  if (!digits) return null
+  const text = `Bonjour, voici votre lien de paiement Numera Agentic pour la formule ${r.plan} (${amountLabel(r.amount, r.currency)} / ${r.interval === 'year' ? 'an' : 'mois'}) : ${link}\n\nUne fois payé, indiquez la référence de transaction dans votre espace « Abonnement » pour activer votre accès.`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+}
+
+function RequestRow({ r, onDone }: { r: AdminPaymentRequest; onDone: () => void }) {
+  const [link, setLink] = useState(r.payment_link ?? '')
+  const [reason, setReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const share = r.payment_link ? whatsappShare(r, r.payment_link) : null
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      onDone()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <li className={`queue-item queue-${r.status}`}>
+      <div className="queue-head">
+        <div>
+          <strong>{r.organization}</strong> <span className="muted small">{r.owner_email ?? ''}</span>
+          <div className="small">
+            {r.kind === 'renewal' ? 'Renouvellement' : 'Nouvel abonnement'} · {r.plan} · {r.interval === 'year' ? 'annuel' : 'mensuel'} ·{' '}
+            <strong>{amountLabel(r.amount, r.currency)}</strong>
+            {r.contact_phone && <> · WhatsApp {r.contact_phone}</>}
+          </div>
+        </div>
+        <span className={`intent ${r.status === 'reference_submitted' ? 'intent-interested' : r.status === 'awaiting_link' ? 'intent-negative' : 'intent-curious'}`}>
+          {r.status === 'awaiting_link' ? 'Lien à envoyer' : r.status === 'link_sent' ? 'En attente du client' : 'À valider'}
+        </span>
+      </div>
+
+      {r.status === 'awaiting_link' && (
+        <form className="ref-row" onSubmit={(e) => { e.preventDefault(); run(() => adminSetPaymentLink(r.id, link.trim())) }}>
+          <input type="url" required value={link} onChange={(e) => setLink(e.target.value)} placeholder="Collez le lien Neero (https://…)" aria-label="Lien de paiement Neero" />
+          <button className="btn" disabled={busy}>Envoyer au client</button>
+        </form>
+      )}
+
+      {r.status === 'link_sent' && (
+        <div className="queue-actions">
+          <span className="muted small">Lien envoyé le {date(r.link_sent_at)}{r.rejection_reason ? ` · dernier refus : ${r.rejection_reason}` : ''}</span>
+          {share && <a className="btn btn-ghost small" href={share} target="_blank" rel="noopener noreferrer">Envoyer sur WhatsApp ↗</a>}
+          <button className="link small" disabled={busy} onClick={() => run(() => adminValidatePayment(r.id))}>Valider sans référence</button>
+        </div>
+      )}
+
+      {r.status === 'reference_submitted' && (
+        <div className="queue-actions">
+          <span>Référence : <strong className="mono">{r.transaction_ref}</strong> <span className="muted small">· vérifiez-la dans Neero</span></span>
+          <button className="btn small" disabled={busy} onClick={() => run(() => adminValidatePayment(r.id))}>Valider</button>
+          {!rejecting
+            ? <button className="btn btn-ghost small" disabled={busy} onClick={() => setRejecting(true)}>Refuser</button>
+            : (
+              <form className="ref-row" onSubmit={(e) => { e.preventDefault(); run(() => adminRejectPayment(r.id, reason)) }}>
+                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Raison (ex. paiement introuvable)" aria-label="Raison du refus" />
+                <button className="btn btn-ghost small" disabled={busy}>Confirmer le refus</button>
+              </form>
+            )}
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+    </li>
+  )
+}
+
+// Encaissement manuel : demandes d'abonnement à traiter.
+function PaymentQueue({ onChange }: { onChange: () => void }) {
+  const [items, setItems] = useState<AdminPaymentRequest[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(() => {
+    adminListPaymentRequests().then(setItems).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+  useEffect(() => {
+    load()
+    const timer = setInterval(load, 60_000)
+    window.addEventListener(BILLING_CHANGED, load)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(BILLING_CHANGED, load)
+    }
+  }, [load])
+  const open = (items ?? []).filter((r) => r.status === 'awaiting_link' || r.status === 'link_sent' || r.status === 'reference_submitted')
+  const todo = open.filter((r) => r.status !== 'link_sent').length
+  return (
+    <section className="card payment-queue">
+      <div className="card-head">
+        <h2>Paiements à traiter {todo > 0 && <span className="nav-badge">{todo}</span>}</h2>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {items && open.length === 0 && <p className="muted">Aucune demande en cours. Vous êtes prévenu sur Telegram dès qu'un client s'abonne.</p>}
+      <ul className="queue">
+        {open.map((r) => <RequestRow key={r.id} r={r} onDone={() => { load(); onChange() }} />)}
+      </ul>
+    </section>
+  )
+}
 
 function GrantForm({ sub, plans, onDone }: { sub: AdminSubscription; plans: Plan[]; onDone: () => void }) {
   const [planId, setPlanId] = useState(sub.plan_id)
@@ -102,6 +217,8 @@ export default function AdminPage() {
         <h1>Revenus & abonnés</h1>
         <p className="lead">Tous les clients de Numera Agentic, ce qu'ils vous rapportent et ce que coûte l'IA. Montants en FCFA.{isDemo && ' Données de démonstration.'}</p>
       </header>
+
+      <PaymentQueue onChange={() => load()} />
 
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Période">
