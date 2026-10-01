@@ -3,7 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
+  AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, PlanLink, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
   AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
@@ -977,6 +977,10 @@ export async function manageBilling(action: 'portal' | 'cancel'): Promise<string
 // ---------- Encaissement manuel (lien de paiement Neero) ----------
 
 const requestDemo: { mine: PaymentRequest | null; admin: AdminPaymentRequest[] } = { mine: null, admin: [] }
+const PLAN_LINK_DAYS = 10
+let planLinkDemo: PlanLink[] = demoPlans.filter((p) => p.prices.XAF.month > 0).flatMap((p) => (['month', 'year'] as const).map((iv) => ({
+  plan_id: p.id, plan: p.name, interval: iv, amount: p.prices.XAF[iv], url: null, created_at: null, expires_at: null,
+})))
 
 export async function getBillingMode(): Promise<BillingMode> {
   if (!supabase) return 'manual'
@@ -993,16 +997,31 @@ export async function getMyPaymentRequest(): Promise<PaymentRequest | null> {
   return (data as PaymentRequest | null) ?? null
 }
 
-export async function requestSubscription(o: { plan: Plan; interval: BillingInterval; currency: Currency; phone: string }) {
+// Pré-remplissage du formulaire d'abonnement : e-mail du compte et nom de l'entreprise.
+export async function getSubscribeDefaults(): Promise<{ name: string; email: string; project: string }> {
+  if (!supabase) return { name: '', email: 'vous@exemple.cm', project: 'Votre entreprise' }
+  const [{ data: u }, { data: org }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from('organizations').select('name').limit(1).maybeSingle(),
+  ])
+  const meta = u.user?.user_metadata as { full_name?: string; name?: string } | undefined
+  return { name: meta?.full_name ?? meta?.name ?? '', email: u.user?.email ?? '', project: org?.name ?? '' }
+}
+
+export async function requestSubscription(o: {
+  plan: Plan; interval: BillingInterval; currency: Currency; phone: string; name: string; email: string; project: string
+}) {
   if (!supabase) {
     const now = new Date().toISOString()
+    const link = o.currency === 'XAF' ? planLinkDemo.find((l) => l.plan_id === o.plan.id && l.interval === o.interval && l.url && l.expires_at && new Date(l.expires_at) > new Date()) : undefined
     requestDemo.mine = {
       id: crypto.randomUUID(), plan_id: o.plan.id, billing_interval: o.interval, currency: o.currency,
-      amount: o.plan.prices[o.currency][o.interval], kind: 'new', status: 'awaiting_link', contact_phone: o.phone,
-      payment_link: null, transaction_ref: null, rejection_reason: null, created_at: now, link_sent_at: null,
+      amount: o.plan.prices[o.currency][o.interval], kind: 'new', status: link ? 'link_sent' : 'awaiting_link', contact_phone: o.phone,
+      payment_link: link?.url ?? null, transaction_ref: null, rejection_reason: null, created_at: now, link_sent_at: link ? now : null,
     }
     requestDemo.admin = [{
-      ...requestDemo.mine, organization_id: 'demo', organization: 'Votre entreprise (démo)', owner_email: 'vous@exemple.cm',
+      ...requestDemo.mine, organization_id: 'demo', organization: 'Votre entreprise (démo)', owner_email: o.email,
+      contact_name: o.name, project: o.project,
       plan: o.plan.name, interval: o.interval, ref_submitted_at: null, validated_at: null, current_period_end: null,
     }, ...requestDemo.admin.filter((r) => r.organization_id !== 'demo')]
     if (billingDemo.entitlements.status !== 'active') billingDemo.entitlements = { ...billingDemo.entitlements, status: 'pending_payment' }
@@ -1011,6 +1030,7 @@ export async function requestSubscription(o: { plan: Plan; interval: BillingInte
   }
   unwrap(await supabase.rpc('request_subscription', {
     p_plan: o.plan.id, p_interval: o.interval, p_currency: o.currency, p_phone: o.phone,
+    p_name: o.name, p_email: o.email, p_project: o.project,
   }))
   window.dispatchEvent(new Event(BILLING_CHANGED))
 }
@@ -1071,6 +1091,34 @@ export async function adminRejectPayment(id: string, reason: string) {
     return
   }
   unwrap(await supabase.rpc('admin_reject_payment', { p_request: id, p_reason: reason }))
+}
+
+// Liens Neero par formule : collés une fois, envoyés automatiquement à chaque demande.
+export async function adminPlanLinks(): Promise<PlanLink[]> {
+  if (!supabase) return planLinkDemo
+  return (unwrap(await supabase.rpc('admin_plan_links')) ?? []) as PlanLink[]
+}
+
+// Renvoie le nombre de demandes en attente servies avec ce lien.
+export async function adminSetPlanLink(planId: string, interval: BillingInterval, url: string): Promise<number> {
+  if (!supabase) {
+    if (!/^https:\/\/\S+$/.test(url.trim())) throw new Error('Le lien doit commencer par https://')
+    const now = new Date()
+    planLinkDemo = planLinkDemo.map((l) => l.plan_id === planId && l.interval === interval
+      ? { ...l, url: url.trim(), created_at: now.toISOString(), expires_at: new Date(now.getTime() + PLAN_LINK_DAYS * 86_400_000).toISOString() } : l)
+    let served = 0
+    requestDemo.admin = requestDemo.admin.map((r) => {
+      if (r.status !== 'awaiting_link' || r.plan_id !== planId || r.interval !== interval || r.currency !== 'XAF') return r
+      served++
+      if (requestDemo.mine?.id === r.id) requestDemo.mine = { ...requestDemo.mine, status: 'link_sent', payment_link: url.trim(), link_sent_at: now.toISOString() }
+      return { ...r, status: 'link_sent', payment_link: url.trim(), link_sent_at: now.toISOString() }
+    })
+    window.dispatchEvent(new Event(BILLING_CHANGED))
+    return served
+  }
+  const served = (unwrap(await supabase.rpc('admin_set_plan_link', { p_plan: planId, p_interval: interval, p_url: url.trim() })) ?? 0) as number
+  window.dispatchEvent(new Event(BILLING_CHANGED))
+  return served
 }
 
 // ---------- Espace propriétaire ----------

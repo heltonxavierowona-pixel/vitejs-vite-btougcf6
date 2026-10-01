@@ -521,7 +521,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .ref-form { display: grid; gap: 6px; width: 100%; }
 .ref-form label { font-size: .88rem; font-weight: 500; }
 .ref-row { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
-.ref-row input {
+.ref-row input, .subscribe-form input {
   flex: 1 1 220px; min-width: 0; font: inherit; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg); color: var(--text);
 }
@@ -539,3 +539,12 @@ a.btn { text-decoration: none; display: inline-block; }
 @media (prefers-color-scheme: dark) {
   .queue-awaiting_link { border-left-color: #ef5350; }
 }
+
+/* Formulaire d'abonnement (encaissement manuel) */
+.subscribe-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.subscribe-form label { display: grid; gap: 6px; min-width: 0; font-size: .88rem; font-weight: 500; }
+.subscribe-form .subscribe-offer, .subscribe-form .btn { grid-column: 1 / -1; }
+.subscribe-form .subscribe-offer { margin: 0; }
+.subscribe-form .btn { justify-self: start; }
+.plan-links .queue { margin-top: 12px; }
+.plan-link-url { overflow-wrap: anywhere; }

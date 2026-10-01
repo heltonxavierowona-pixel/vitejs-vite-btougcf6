@@ -302,6 +302,8 @@ export interface AdminPaymentRequest {
   organization_id: string
   organization: string
   owner_email: string | null
+  contact_name: string | null
+  project: string | null
   plan_id: string
   plan: string
   interval: BillingInterval
@@ -318,6 +320,17 @@ export interface AdminPaymentRequest {
   ref_submitted_at: string | null
   validated_at: string | null
   current_period_end: string | null
+}
+
+// Lien Neero réutilisable d'une formule (valable quelques jours).
+export interface PlanLink {
+  plan_id: string
+  plan: string
+  interval: BillingInterval
+  amount: number
+  url: string | null
+  created_at: string | null
+  expires_at: string | null
 }
 
 export interface PaymentRow {

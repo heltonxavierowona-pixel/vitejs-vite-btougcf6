@@ -1,11 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { DataTable, HBars, LineChart, StatTile } from '../components/Charts'
 import {
-  adminGrant, adminListPaymentRequests, adminRejectPayment, adminSetPaymentLink, adminValidatePayment,
+  adminGrant, adminListPaymentRequests, adminPlanLinks, adminRejectPayment, adminSetPaymentLink, adminSetPlanLink, adminValidatePayment,
   BILLING_CHANGED, getAdminStats, isDemo, listPlans,
 } from '../lib/api'
 import { fmt, pct } from '../lib/format'
-import type { AdminPaymentRequest, AdminStats, AdminSubscription, Currency, Plan } from '../lib/types'
+import type { AdminPaymentRequest, AdminStats, AdminSubscription, Currency, Plan, PlanLink } from '../lib/types'
 
 // Espace propriétaire de la plateforme : réservé aux comptes de platform_admins.
 // Tous les montants sont convertis en FCFA (XAF) au taux défini dans platform_settings.
@@ -58,7 +58,8 @@ function RequestRow({ r, onDone }: { r: AdminPaymentRequest; onDone: () => void 
     <li className={`queue-item queue-${r.status}`}>
       <div className="queue-head">
         <div>
-          <strong>{r.organization}</strong> <span className="muted small">{r.owner_email ?? ''}</span>
+          <strong>{r.contact_name || r.organization}</strong> <span className="muted small">{r.owner_email ?? ''}</span>
+          {r.project && r.project !== r.contact_name && <div className="small">Projet : {r.project}</div>}
           <div className="small">
             {r.kind === 'renewal' ? 'Renouvellement' : 'Nouvel abonnement'} · {r.plan} · {r.interval === 'year' ? 'annuel' : 'mensuel'} ·{' '}
             <strong>{amountLabel(r.amount, r.currency)}</strong>
@@ -79,7 +80,7 @@ function RequestRow({ r, onDone }: { r: AdminPaymentRequest; onDone: () => void 
 
       {r.status === 'link_sent' && (
         <div className="queue-actions">
-          <span className="muted small">Lien envoyé le {date(r.link_sent_at)}{r.rejection_reason ? ` · dernier refus : ${r.rejection_reason}` : ''}</span>
+          <span className="muted small">Lien envoyé par e-mail le {date(r.link_sent_at)}{r.rejection_reason ? ` · dernier refus : ${r.rejection_reason}` : ''}</span>
           {share && <a className="btn btn-ghost small" href={share} target="_blank" rel="noopener noreferrer">Envoyer sur WhatsApp ↗</a>}
           <button className="link small" disabled={busy} onClick={() => run(() => adminValidatePayment(r.id))}>Valider sans référence</button>
         </div>
@@ -128,9 +129,87 @@ function PaymentQueue({ onChange }: { onChange: () => void }) {
         <h2>Paiements à traiter {todo > 0 && <span className="nav-badge">{todo}</span>}</h2>
       </div>
       {error && <p className="error">{error}</p>}
-      {items && open.length === 0 && <p className="muted">Aucune demande en cours. Vous êtes prévenu sur Telegram dès qu'un client s'abonne.</p>}
+      {items && open.length === 0 && <p className="muted">Aucune demande en cours. Vous êtes prévenu par e-mail dès qu'un client s'abonne.</p>}
       <ul className="queue">
         {open.map((r) => <RequestRow key={r.id} r={r} onDone={() => { load(); onChange() }} />)}
+      </ul>
+    </section>
+  )
+}
+
+const hoursLeft = (iso: string | null) => (iso ? (new Date(iso).getTime() - Date.now()) / 3_600_000 : -1)
+
+function validity(l: PlanLink): { text: string; cls: string } {
+  if (!l.url) return { text: 'Aucun lien', cls: 'intent-negative' }
+  const h = hoursLeft(l.expires_at)
+  if (h <= 0) return { text: 'Expiré', cls: 'intent-negative' }
+  if (h <= 24) return { text: `Expire dans ${Math.max(1, Math.round(h))} h`, cls: 'intent-not_now' }
+  return { text: `Valable ${Math.ceil(h / 24)} j`, cls: 'intent-interested' }
+}
+
+function PlanLinkRow({ l, onSaved }: { l: PlanLink; onSaved: (served: number) => void }) {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const v = validity(l)
+  return (
+    <li className="plan-link">
+      <div className="queue-head">
+        <div>
+          <strong>{l.plan}</strong> · {l.interval === 'year' ? 'annuel' : 'mensuel'} · <strong>{xaf(l.amount)}</strong>
+          {l.url && <div className="muted small mono plan-link-url">{l.url}{l.expires_at && <> · jusqu'au {new Date(l.expires_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>}</div>}
+        </div>
+        <span className={`intent ${v.cls}`}>{v.text}</span>
+      </div>
+      <form className="ref-row" onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setError(null)
+        try {
+          onSaved(await adminSetPlanLink(l.plan_id, l.interval, url))
+          setUrl('')
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBusy(false)
+        }
+      }}>
+        <input type="url" required value={url} onChange={(e) => setUrl(e.target.value)}
+          placeholder={l.url ? 'Nouveau lien Neero (https://…)' : 'Collez le lien Neero de cette offre (https://…)'}
+          aria-label={`Lien Neero ${l.plan} ${l.interval === 'year' ? 'annuel' : 'mensuel'}`} />
+        <button className="btn" disabled={busy}>{l.url ? 'Remplacer' : 'Enregistrer'}</button>
+      </form>
+      {error && <p className="error">{error}</p>}
+    </li>
+  )
+}
+
+// Liens Neero préparés par offre : envoyés automatiquement par e-mail à chaque demande, même la nuit.
+function PlanLinks({ onChange }: { onChange: () => void }) {
+  const [links, setLinks] = useState<PlanLink[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const load = useCallback(() => {
+    adminPlanLinks().then(setLinks).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+  useEffect(() => { load() }, [load])
+  const toRenew = (links ?? []).filter((l) => hoursLeft(l.expires_at) <= 24).length
+  return (
+    <section className="card plan-links">
+      <div className="card-head">
+        <h2>Liens Neero par offre {toRenew > 0 && <span className="nav-badge">{toRenew}</span>}</h2>
+      </div>
+      <p className="muted small">Créez un lien de paiement par offre dans Neero et collez-le ici. Chaque client qui s'abonne le reçoit aussitôt par e-mail. Les liens restent valables 10 jours : renouvelez-les tous les 9 jours, vous recevez un rappel la veille de l'expiration.</p>
+      {error && <p className="error">{error}</p>}
+      {notice && <p className="success">{notice}</p>}
+      <ul className="queue">
+        {(links ?? []).map((l) => (
+          <PlanLinkRow key={`${l.plan_id}-${l.interval}`} l={l} onSaved={(n) => {
+            setNotice(n > 0 ? `Lien enregistré et envoyé à ${n} client${n > 1 ? 's' : ''} en attente.` : 'Lien enregistré.')
+            load()
+            onChange()
+          }} />
+        ))}
       </ul>
     </section>
   )
@@ -219,6 +298,7 @@ export default function AdminPage() {
       </header>
 
       <PaymentQueue onChange={() => load()} />
+      <PlanLinks onChange={() => load()} />
 
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Période">

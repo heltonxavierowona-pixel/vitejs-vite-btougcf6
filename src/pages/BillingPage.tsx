@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Meter } from '../components/Charts'
 import {
-  BILLING_CHANGED, enabledProviders, getBillingMode, getEntitlements, getMyPaymentRequest, isDemo, listMyPayments,
+  BILLING_CHANGED, enabledProviders, getBillingMode, getEntitlements, getMyPaymentRequest, getSubscribeDefaults, isDemo, listMyPayments,
   listPlans, manageBilling, requestSubscription, startCheckout, submitPaymentReference,
 } from '../lib/api'
 import type {
@@ -117,8 +117,8 @@ function RequestCard({ r, plans }: { r: PaymentRequest; plans: Plan[] }) {
         <li className="done">Demande envoyée le {date(r.created_at)}</li>
         <li className={step > 1 ? 'done' : 'current'}>
           {step === 1
-            ? <>Votre lien de paiement vous sera envoyé sous quelques heures{r.contact_phone ? <>, par WhatsApp au <strong>{r.contact_phone}</strong> et ici même</> : ', ici même'}.</>
-            : <>Lien de paiement reçu</>}
+            ? <>Votre lien de paiement vous sera envoyé sous quelques heures, par e-mail et ici même.</>
+            : <>Lien de paiement reçu (aussi envoyé par e-mail)</>}
         </li>
         <li className={step === 2 ? 'current' : step > 2 ? 'done' : ''}>
           {step < 3 ? 'Payez, puis indiquez la référence de transaction' : <>Référence <strong>{r.transaction_ref}</strong> envoyée : vérification en cours</>}
@@ -149,15 +149,23 @@ function RequestCard({ r, plans }: { r: PaymentRequest; plans: Plan[] }) {
 function SubscribeBox({ plan, interval, currency, phone, onClose, onDone }: {
   plan: Plan; interval: BillingInterval; currency: Currency; phone: string; onClose: () => void; onDone: () => void
 }) {
-  const [value, setValue] = useState(phone)
+  const [form, setForm] = useState({ name: '', email: '', phone, project: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    getSubscribeDefaults().then((d) => setForm((f) => ({
+      name: f.name || d.name, email: f.email || d.email, phone: f.phone, project: f.project || d.project,
+    })))
+  }, [])
+  const field = (k: keyof typeof form) => ({
+    value: form[k], onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value }),
+  })
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await requestSubscription({ plan, interval, currency, phone: value })
+      await requestSubscription({ plan, interval, currency, ...form })
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -171,15 +179,16 @@ function SubscribeBox({ plan, interval, currency, phone, onClose, onDone }: {
         <h2>S'abonner à {plan.name} · {money(plan.prices[currency][interval], currency)} / {interval === 'month' ? 'mois' : 'an'}</h2>
         <button className="link close" onClick={onClose} aria-label="Fermer">×</button>
       </div>
-      <form className="ref-form" onSubmit={submit}>
-        <label htmlFor="wa-phone">Votre numéro WhatsApp, pour recevoir le lien de paiement</label>
-        <div className="ref-row">
-          <input id="wa-phone" type="tel" required value={value} onChange={(e) => setValue(e.target.value)} placeholder="+237 6XX XX XX XX" />
-          <button className="btn" disabled={busy}>{busy ? 'Envoi…' : 'Envoyer ma demande'}</button>
-        </div>
+      <form className="subscribe-form" onSubmit={submit}>
+        <label>Nom complet<input id="sub-name" required minLength={2} autoComplete="name" {...field('name')} /></label>
+        <label>E-mail, pour recevoir le lien de paiement<input id="sub-email" type="email" required autoComplete="email" {...field('email')} /></label>
+        <label>Téléphone WhatsApp<input id="sub-phone" type="tel" required autoComplete="tel" placeholder="+237 6XX XX XX XX" {...field('phone')} /></label>
+        <label>Projet ou entreprise<input id="sub-project" {...field('project')} /></label>
+        <p className="subscribe-offer">Offre choisie : <strong>{plan.name}</strong>, {interval === 'month' ? 'mensuelle' : 'annuelle'} · {money(plan.prices[currency][interval], currency)}</p>
+        <button className="btn" disabled={busy}>{busy ? 'Envoi…' : 'Envoyer ma demande'}</button>
       </form>
       {error && <p className="error">{error}</p>}
-      <p className="muted small">Vous recevez sous quelques heures un lien de paiement sécurisé (Mobile Money ou carte). Une fois payé, indiquez la référence de transaction : votre accès est activé dès sa vérification.</p>
+      <p className="muted small">Vous recevez par e-mail un lien de paiement sécurisé Neero (Mobile Money ou carte) : immédiatement s'il est prêt, sinon sous quelques heures. Une fois payé, indiquez ici la référence de transaction : votre accès est activé dès sa vérification.</p>
     </section>
   )
 }
@@ -193,7 +202,9 @@ export default function BillingPage() {
   const [mode, setMode] = useState<BillingMode | null>(null)
   const [request, setRequest] = useState<PaymentRequest | null>(null)
   const [interval, setInterval] = useState<BillingInterval>('month')
-  const [currency, setCurrency] = useState<Currency>('XAF')
+  const [currencyChoice, setCurrency] = useState<Currency>('XAF')
+  // Encaissement manuel : liens Neero en FCFA uniquement.
+  const currency: Currency = mode === 'manual' ? 'XAF' : currencyChoice
   const [choosing, setChoosing] = useState<Plan | null>(null)
   const [busy, setBusy] = useState<PaymentProvider | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error' | 'notice'; text: string } | null>(null)
@@ -261,13 +272,13 @@ export default function BillingPage() {
           <button className={interval === 'month' ? 'active' : ''} onClick={() => setInterval('month')}>Mensuel</button>
           <button className={interval === 'year' ? 'active' : ''} onClick={() => setInterval('year')}>Annuel · 2 mois offerts</button>
         </div>
-        <div className="segmented" role="group" aria-label="Devise">
+        {mode !== 'manual' && <div className="segmented" role="group" aria-label="Devise">
           {(['XAF', 'EUR', 'USD'] as Currency[]).map((c) => (
             <button key={c} className={currency === c ? 'active' : ''} onClick={() => { setCurrency(c); if (params.get('paiement')) setParams({}) }}>
               {c === 'XAF' ? 'FCFA' : c}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       <div className="plans">
