@@ -246,7 +246,6 @@ export interface SessionUser {
   email: string;
   firstName: string;
   lastName: string;
-  phone?: string | null;
   /** Éditeur de Numera : accès à l'écran d'administration. */
   isPlatformAdmin?: boolean;
 }

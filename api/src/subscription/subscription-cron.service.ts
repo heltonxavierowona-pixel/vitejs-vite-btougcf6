@@ -97,7 +97,6 @@ export class SubscriptionCronService {
     if (!this.subscriptions.onlinePaymentsEnabled) {
       renewals = await this.manualPayments.createRenewalRequests(now);
       await this.manualPayments.remindAdminOfPending();
-      await this.manualPayments.remindPlanLinksRenewal();
     }
 
     // --- Neero : rattrapage des webhooks perdus (sur Vercel, seul

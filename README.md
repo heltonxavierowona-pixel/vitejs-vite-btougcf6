@@ -97,7 +97,7 @@ npm run dev
 
 Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé à la main (paiements en ligne désactivés) :
 
-1. Le client clique sur « S'abonner » et remplit le formulaire : nom, e-mail, téléphone (WhatsApp), projet, offre. Sa demande passe « en attente de paiement ».
+1. Le client choisit sa formule sur la page Abonnement. Sa demande passe « en attente de paiement » et il lit « Votre lien de paiement vous sera envoyé sous quelques heures » (également par e-mail).
 2. L'administrateur reçoit une notification (Telegram, WhatsApp ou e-mail) : client, projet, offre, montant.
 3. **Liens préparés** : si l'administrateur a enregistré dans /admin/paiements un lien Neero pour cette formule, le client le reçoit instantanément (e-mail et page Abonnement), même la nuit. Sinon, l'administrateur génère le lien dans Neero et le colle sur la demande ; un bouton prépare aussi le message WhatsApp.
 4. Le client paie puis saisit la référence de transaction. Nouvelle notification ; l'administrateur vérifie dans Neero et clique **Valider** : l'accès s'active pour un mois. Une référence ne peut servir qu'une fois.
@@ -110,8 +110,7 @@ Par défaut, les abonnements se paient par un **lien de paiement Neero** envoyé
 | `PLATFORM_ADMIN_EMAILS` | e-mails ayant accès à /admin/paiements (bouton « Admin » dans l'en-tête) |
 | `WHATSAPP_NOTIFY_PHONE`, `WHATSAPP_NOTIFY_APIKEY` | notifications WhatsApp vers votre numéro via CallMeBot (gratuit) : envoyez « I allow callmebot to send me messages » au numéro indiqué sur callmebot.com, qui répond la clé |
 | `TELEGRAM_BOT_TOKEN` | jeton du bot créé avec @BotFather ; la conversation se relie ensuite depuis l'écran admin | (prioritaire sur WhatsApp) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients et à l'administratrice, par Gmail : `smtp.gmail.com`, `465`, adresse Gmail, mot de passe d'application Google (16 lettres) ; `MAIL_FROM` = la même adresse |
-| `PLAN_LINK_VALIDITY_DAYS` | validité d'un lien Neero préparé (10 jours par défaut) : rappel par e-mail la veille, lien expiré plus envoyé |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | e-mails aux clients et à l'administrateur. Brevo (gratuit, 300 e-mails/jour) : `smtp-relay.brevo.com`, `587`, identifiant SMTP du compte, clé SMTP (Brevo → SMTP & API → Clés SMTP) ; `MAIL_FROM` doit être un expéditeur validé dans Brevo |
 | `PAYMENT_MODE` | `online` pour réactiver Notch Pay / Stripe (voir ci-dessous) |
 
 Sans SMTP, le client retrouve son lien sur sa page Abonnement et l'administrateur l'envoie par WhatsApp en un clic. L'envoi WhatsApp entièrement automatique exigerait l'API WhatsApp Business (payante).

@@ -1,12 +1,5 @@
 # Journal des corrections
 
-## Formulaire de souscription et liens Neero renouvelés tous les 9 jours
-
-- « S'abonner » ouvre un formulaire (nom, e-mail, téléphone WhatsApp, projet, offre), prérempli avec le compte ; le lien et la confirmation partent à l'adresse saisie, l'alerte de l'administratrice reprend ces coordonnées, le bouton WhatsApp vise le numéro saisi.
-- Liens Neero préparés valables 10 jours (`PLAN_LINK_VALIDITY_DAYS`) : date d'ajout et d'expiration affichées, rappel quotidien par e-mail dès le 9e jour, lien expiré jamais envoyé (la demande attend un nouveau lien et l'administratrice est prévenue).
-- Notifications par e-mail Google mises en avant ; WhatsApp et Telegram restent facultatifs. Brevo n'est plus utilisé.
-- Scénario du paiement par lien porté à 62 vérifications.
-
 ## Tableau de bord administrateur
 
 - Chiffres clés : encaissé du mois (et évolution), revenu mensuel récurrent, clients, essais, échéances sous 7 jours, impayés, suspendus, paiements à traiter.
