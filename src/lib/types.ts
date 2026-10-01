@@ -333,6 +333,16 @@ export interface PlanLink {
   expires_at: string | null
 }
 
+export interface EmailLogRow {
+  id: number
+  to_email: string
+  subject: string
+  status: 'queued' | 'sent' | 'failed' | 'skipped'
+  error: string | null
+  created_at: string
+  sent_at: string | null
+}
+
 export interface PaymentRow {
   id: string
   provider: string

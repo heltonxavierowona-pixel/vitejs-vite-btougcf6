@@ -1,11 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { DataTable, HBars, LineChart, StatTile } from '../components/Charts'
 import {
-  adminGrant, adminListPaymentRequests, adminPlanLinks, adminRejectPayment, adminSetPaymentLink, adminSetPlanLink, adminValidatePayment,
+  adminEmailLog, adminGrant, adminListPaymentRequests, adminPlanLinks, adminRejectPayment, adminSetPaymentLink, adminSetPlanLink, adminTestEmail, adminValidatePayment,
   BILLING_CHANGED, getAdminStats, isDemo, listPlans,
 } from '../lib/api'
 import { fmt, pct } from '../lib/format'
-import type { AdminPaymentRequest, AdminStats, AdminSubscription, Currency, Plan, PlanLink } from '../lib/types'
+import type { AdminPaymentRequest, EmailLogRow, AdminStats, AdminSubscription, Currency, Plan, PlanLink } from '../lib/types'
 
 // Espace propriétaire de la plateforme : réservé aux comptes de platform_admins.
 // Tous les montants sont convertis en FCFA (XAF) au taux défini dans platform_settings.
@@ -215,6 +215,64 @@ function PlanLinks({ onChange }: { onChange: () => void }) {
   )
 }
 
+const MAIL_STATUS: Record<EmailLogRow['status'], { label: string; cls: string }> = {
+  sent: { label: 'Envoyé', cls: 'intent-interested' },
+  queued: { label: 'En cours', cls: 'intent-curious' },
+  failed: { label: 'Échec', cls: 'intent-negative' },
+  skipped: { label: 'Non envoyé', cls: 'intent-not_now' },
+}
+
+// E-mails partis de votre Gmail : bouton de test et derniers envois.
+function EmailPanel() {
+  const [rows, setRows] = useState<EmailLogRow[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const load = useCallback(() => {
+    adminEmailLog().then(setRows).catch((e) => setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }))
+  }, [])
+  useEffect(() => { load() }, [load])
+  const test = async () => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const to = await adminTestEmail()
+      setMsg({ ok: true, text: `E-mail de test envoyé à ${to}. Vérifiez votre boîte Gmail (et les spams).` })
+      window.setTimeout(load, 5000)
+      load()
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card email-panel">
+      <div className="card-head">
+        <h2>E-mails</h2>
+        <button className="btn btn-ghost small" disabled={busy} onClick={test}>{busy ? 'Envoi…' : 'Tester l\'envoi'}</button>
+      </div>
+      <p className="muted small">Les e-mails aux clients et vos alertes partent de votre Gmail.</p>
+      {msg && <p className={msg.ok ? 'success' : 'error'}>{msg.text}</p>}
+      {rows && rows.length > 0 && (
+        <ul className="queue">
+          {rows.map((r) => (
+            <li key={r.id} className="queue-item email-row">
+              <div className="queue-head">
+                <div>
+                  <strong>{r.subject}</strong>
+                  <div className="muted small">{r.to_email} · {new Date(r.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                  {r.error && <div className="small error-text">{r.error}</div>}
+                </div>
+                <span className={`intent ${MAIL_STATUS[r.status].cls}`}>{MAIL_STATUS[r.status].label}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function GrantForm({ sub, plans, onDone }: { sub: AdminSubscription; plans: Plan[]; onDone: () => void }) {
   const [planId, setPlanId] = useState(sub.plan_id)
   const [days, setDays] = useState(30)
@@ -299,6 +357,7 @@ export default function AdminPage() {
 
       <PaymentQueue onChange={() => load()} />
       <PlanLinks onChange={() => load()} />
+      <EmailPanel />
 
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Période">

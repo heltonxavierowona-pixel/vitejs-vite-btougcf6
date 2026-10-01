@@ -3,7 +3,7 @@ import { analyzeWithRules } from './channelAdvisor'
 import { qualifyWithRules, splitProfiles } from './prospectQualifier'
 import { DAILY_LIMITS } from './outreach'
 import type {
-  AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, PlanLink, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
+  AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, PlanLink, EmailLogRow, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
   AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
   ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
   Prospect, ProspectStage,
@@ -1119,6 +1119,21 @@ export async function adminSetPlanLink(planId: string, interval: BillingInterval
   const served = (unwrap(await supabase.rpc('admin_set_plan_link', { p_plan: planId, p_interval: interval, p_url: url.trim() })) ?? 0) as number
   window.dispatchEvent(new Event(BILLING_CHANGED))
   return served
+}
+
+// E-mails envoyés depuis votre Gmail (Edge Function send-email) : test et journal.
+let emailDemo: EmailLogRow[] = []
+export async function adminTestEmail(): Promise<string> {
+  if (!supabase) {
+    emailDemo = [{ id: Date.now(), to_email: 'vous@gmail.com', subject: 'Test : les e-mails Numera Agentic fonctionnent', status: 'sent', error: null, created_at: new Date().toISOString(), sent_at: new Date().toISOString() }, ...emailDemo]
+    return 'vous@gmail.com'
+  }
+  return unwrap(await supabase.rpc('admin_test_email')) as string
+}
+
+export async function adminEmailLog(): Promise<EmailLogRow[]> {
+  if (!supabase) return emailDemo
+  return (unwrap(await supabase.rpc('admin_email_log', { p_limit: 8 })) ?? []) as EmailLogRow[]
 }
 
 // ---------- Espace propriétaire ----------

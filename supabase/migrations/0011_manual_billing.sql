@@ -2,13 +2,12 @@
 -- Numera Agentic — encaissement manuel par lien de paiement (Neero)
 --
 -- 1. Le client remplit le formulaire « S'abonner » (nom, e-mail, téléphone, projet,
---    offre) : demande créée, compte « en attente de paiement », contact ajouté à la
---    liste Brevo « Demandes d'abonnement ».
+--    offre) : demande créée, compte « en attente de paiement ».
 -- 2. Si un lien Neero valide est préparé pour cette offre (liens par formule, valables
 --    10 jours), il est envoyé tout de suite au client par e-mail. Sinon le client est
 --    prévenu que son lien arrive sous quelques heures, et le propriétaire le colle.
--- 3. Le propriétaire est prévenu par e-mail (Brevo vers son Gmail), et sur Telegram
---    s'il l'a configuré.
+-- 3. Le propriétaire est prévenu par e-mail. Tous les e-mails partent de son Gmail
+--    (Edge Function send-email, SMTP + mot de passe d'application), comme NUMERA-ai.
 -- 4. Le client paie et saisit la référence de transaction ; le propriétaire vérifie
 --    dans Neero et clique « Valider » : l'accès s'active, le client est prévenu.
 -- 5. Chaque matin : renouvellements 5 jours avant l'échéance, relance des clients
@@ -27,10 +26,9 @@ insert into platform_settings (key, value) values
   ('billing_mode', '"manual"'),
   ('app_url', '"https://numera-agentic.vercel.app"'),
   ('plan_link_validity_days', '10'),
-  -- Brevo : expéditeur, destinataire des alertes, liste et modèles (identifiants Brevo,
-  -- renseignés après la création des modèles dans le compte Brevo).
-  ('notifications', '{"owner_email": null, "sender_name": "Numera Agentic", "sender_email": null,
-                      "brevo_list_id": null, "templates": {}}')
+  -- E-mails : adresse qui reçoit vos alertes, et URL de l'Edge Function send-email
+  -- (https://<projet>.supabase.co/functions/v1/send-email), renseignées après déploiement.
+  ('notifications', '{"owner_email": null, "mail_function_url": null}')
 on conflict (key) do update set value = excluded.value;
 
 update platform_settings set value = '{"stripe": false, "paypal": false, "flutterwave": false}'
@@ -153,11 +151,32 @@ create table plan_links (
 );
 alter table plan_links enable row level security;   -- lu et écrit uniquement par les fonctions ci-dessous
 
--- ---------- Envois par Brevo (sans n8n) ---------------------------------
--- Clé API Brevo dans Supabase Vault : brevo_api_key. Sans elle, rien n'est envoyé.
+-- ---------- E-mails depuis Gmail (Edge Function send-email) -------------
+-- La base prépare l'e-mail et l'envoie à send-email par pg_net (après validation de la
+-- transaction). Le secret partagé est généré ici et reste dans Vault.
+
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'mail_hook_secret') then
+    perform vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'mail_hook_secret');
+  end if;
+end $$;
+
+-- Journal des envois : visible dans l'espace propriétaire (envoyé, échec et raison).
+create table email_log (
+  id         bigint generated always as identity primary key,
+  to_email   text not null,
+  subject    text not null,
+  status     text not null default 'queued' check (status in ('queued', 'sent', 'failed', 'skipped')),
+  error      text,
+  created_at timestamptz not null default now(),
+  sent_at    timestamptz
+);
+create index on email_log (created_at desc);
+alter table email_log enable row level security;   -- lu par admin_email_log, écrit par send-email
 
 create or replace function html_escape(t text) returns text language sql immutable
-as $$ select replace(replace(replace(coalesce(t, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;') $$;
+as $$ select replace(replace(replace(replace(coalesce(t, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;') $$;
 
 create or replace function app_url() returns text language sql stable security definer set search_path = public
 as $$ select coalesce((select value #>> '{}' from platform_settings where key = 'app_url'), '') $$;
@@ -166,54 +185,55 @@ as $$ select coalesce((select value #>> '{}' from platform_settings where key = 
 create or replace function fmt_amount(p_amount numeric, p_currency text) returns text language sql immutable
 as $$ select replace(to_char(p_amount, 'FM999G999G990'), ',', ' ') || ' ' || case p_currency when 'XAF' then 'FCFA' else p_currency end $$;
 
-create or replace function brevo_post(p_path text, p_body jsonb)
+-- Appelée par send-email (clé service_role) pour vérifier le secret.
+create or replace function mail_hook_check(p_secret text) returns boolean
+language sql stable security definer set search_path = public
+as $$ select exists (select 1 from vault.decrypted_secrets where name = 'mail_hook_secret' and decrypted_secret = p_secret) $$;
+
+-- Mise en page commune : titre, paragraphes (texte brut), bouton.
+create or replace function mail_html(p_title text, p_body text, p_button text, p_url text)
+returns text language sql immutable
+as $$
+  select '<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1d2733">'
+    || '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">'
+    || '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e3e8ee">'
+    || '<tr><td style="padding:20px 28px;border-bottom:1px solid #e3e8ee;font-weight:bold;font-size:18px;color:#0b3a5c">Numera Agentic</td></tr>'
+    || '<tr><td style="padding:24px 28px"><h1 style="margin:0 0 16px;font-size:20px;color:#0b3a5c">' || html_escape(p_title) || '</h1>'
+    || '<p style="margin:0 0 16px;font-size:15px;line-height:1.55">'
+    || replace(replace(html_escape(p_body), E'\n\n', '</p><p style="margin:0 0 16px;font-size:15px;line-height:1.55">'), E'\n', '<br>')
+    || '</p>'
+    || case when coalesce(p_url, '') <> '' then
+         '<p style="margin:24px 0"><a href="' || html_escape(p_url) || '" style="display:inline-block;background:#0b3a5c;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">'
+         || html_escape(p_button) || '</a></p>'
+         || '<p style="margin:0;font-size:12px;color:#6b7785">Si le bouton ne fonctionne pas, copiez ce lien : ' || html_escape(p_url) || '</p>'
+       else '' end
+    || '</td></tr></table></td></tr></table></body></html>'
+$$;
+
+-- Envoie un e-mail (sans effet tant que mail_function_url n'est pas renseignée).
+create or replace function mail_send(p_to text, p_subject text, p_body text,
+                                     p_button text default null, p_url text default null)
 returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
-declare v_key text;
-begin
-  select decrypted_secret into v_key from vault.decrypted_secrets where name = 'brevo_api_key';
-  if v_key is null then return; end if;
-  perform net.http_post(
-    url     := 'https://api.brevo.com/v3/' || p_path,
-    body    := p_body,
-    headers := jsonb_build_object('api-key', v_key, 'Content-Type', 'application/json', 'Accept', 'application/json'));
-end $$;
-
--- Envoie un modèle Brevo (identifiants dans platform_settings.notifications.templates).
-create or replace function brevo_email(p_template text, p_to text, p_name text, p_params jsonb)
-returns void
-language plpgsql security definer set search_path = public
-as $$
-declare v_conf jsonb; v_id int;
+declare v_url text; v_secret text; v_id bigint;
 begin
   if coalesce(p_to, '') !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then return; end if;
-  select value into v_conf from platform_settings where key = 'notifications';
-  v_id := (v_conf -> 'templates' ->> p_template)::int;
-  if v_id is null then return; end if;
-  perform brevo_post('smtp/email', jsonb_build_object(
-    'templateId', v_id,
-    'to', jsonb_build_array(jsonb_build_object('email', p_to, 'name', coalesce(nullif(p_name, ''), p_to))),
-    'params', p_params || jsonb_build_object('APP_URL', app_url())));
-end $$;
-
--- Ajoute (ou met à jour) le contact dans la liste Brevo « Demandes d'abonnement ».
-create or replace function brevo_add_contact(p_email text, p_name text, p_phone text)
-returns void
-language plpgsql security definer set search_path = public
-as $$
-declare v_list int;
-begin
-  if coalesce(p_email, '') !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then return; end if;
-  select (value ->> 'brevo_list_id')::int into v_list from platform_settings where key = 'notifications';
-  perform brevo_post('contacts', jsonb_build_object(
-    'email', p_email,
-    'updateEnabled', true,
-    'attributes', jsonb_strip_nulls(jsonb_build_object(
-      'PRENOM', nullif(split_part(trim(coalesce(p_name, '')), ' ', 1), ''),
-      'NOM', nullif(trim(substr(trim(coalesce(p_name, '')), length(split_part(trim(coalesce(p_name, '')), ' ', 1)) + 1)), ''),
-      'WHATSAPP', p_phone)),
-    'listIds', case when v_list is null then '[]'::jsonb else jsonb_build_array(v_list) end));
+  select value ->> 'mail_function_url' into v_url from platform_settings where key = 'notifications';
+  select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'mail_hook_secret';
+  insert into email_log (to_email, subject, status, error)
+  values (p_to, left(p_subject, 200),
+          case when v_url is null or v_secret is null then 'skipped' else 'queued' end,
+          case when v_url is null then 'mail_function_url non renseignée' end)
+  returning id into v_id;
+  if v_url is null or v_secret is null then return; end if;
+  perform net.http_post(
+    url     := v_url,
+    body    := jsonb_build_object('log_id', v_id, 'to', p_to, 'subject', p_subject,
+                 'html', mail_html(p_subject, p_body, p_button, p_url),
+                 'text', p_body || case when coalesce(p_url, '') <> '' then E'\n\n' || p_button || ' : ' || p_url else '' end),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-mail-secret', v_secret),
+    timeout_milliseconds := 20000);
 end $$;
 
 -- Telegram, facultatif : jetons dans Vault (telegram_bot_token, owner_telegram_chat_id).
@@ -232,7 +252,7 @@ begin
     headers := '{"Content-Type": "application/json"}'::jsonb);
 end $$;
 
--- Prévient le propriétaire : e-mail Brevo vers son adresse (Gmail), et Telegram si configuré.
+-- Prévient le propriétaire : e-mail vers son adresse, et Telegram si configuré.
 create or replace function notify_owner(p_title text, p_body text, p_action_label text default 'Ouvrir l''espace propriétaire')
 returns void
 language plpgsql security definer set search_path = public
@@ -240,9 +260,7 @@ as $$
 declare v_to text;
 begin
   select value ->> 'owner_email' into v_to from platform_settings where key = 'notifications';
-  perform brevo_email('owner_notice', v_to, 'Numera Agentic', jsonb_build_object(
-    'TITLE', html_escape(p_title), 'BODY', html_escape(p_body),
-    'ACTION_URL', app_url() || '/admin', 'ACTION_LABEL', p_action_label));
+  perform mail_send(v_to, p_title, p_body, p_action_label, app_url() || '/admin');
   perform notify_owner_telegram(p_title || E'\n' || p_body || E'\n\n' || app_url() || '/admin');
 end $$;
 
@@ -255,19 +273,89 @@ as $$
       where m.organization_id = r.organization_id and m.role = 'owner' limit 1))
 $$;
 
-create or replace function request_params(r payment_requests)
-returns jsonb language sql stable security definer set search_path = public
+-- E-mails au client, selon l'étape de sa demande.
+create or replace function client_mail(p_kind text, r payment_requests, p_extra jsonb default '{}')
+returns void
+language plpgsql security definer set search_path = public
 as $$
-  select jsonb_build_object(
-    'NAME', html_escape(coalesce(nullif(r.contact_name, ''), o.name)),
-    'PROJECT', html_escape(coalesce(nullif(r.project, ''), o.name)),
-    'PLAN', p.name,
-    'PERIOD', case r.billing_interval when 'year' then '1 an' else '1 mois' end,
-    'AMOUNT', fmt_amount(r.amount, r.currency),
-    'LINK', coalesce(r.payment_link, ''))
-  from organizations o, plans p
-  where o.id = r.organization_id and p.id = r.plan_id
-$$;
+declare
+  v_name text; v_project text; v_plan text; v_offer text; v_amount text; v_subject text; v_body text;
+  v_button text; v_url text; v_follow text := app_url() || '/abonnement';
+begin
+  select coalesce(nullif(r.contact_name, ''), o.name), coalesce(nullif(r.project, ''), o.name), p.name
+    into v_name, v_project, v_plan
+    from organizations o, plans p where o.id = r.organization_id and p.id = r.plan_id;
+  v_offer := v_plan || ', ' || case r.billing_interval when 'year' then '1 an' else '1 mois' end;
+  v_amount := fmt_amount(r.amount, r.currency);
+
+  if p_kind = 'link' then
+    v_subject := 'Votre lien de paiement Numera Agentic : ' || v_plan;
+    v_body := 'Bonjour ' || v_name || E',\n\nMerci pour votre demande d''abonnement pour « ' || v_project || E' ».\n'
+      || 'Offre : ' || v_offer || E'\nMontant : ' || v_amount
+      || E'\n\nPayez avec le lien sécurisé ci-dessous (Mobile Money ou carte). Une fois le paiement effectué, '
+      || 'indiquez la référence de transaction dans votre espace « Abonnement » (' || v_follow || E') : '
+      || 'votre accès est activé dès sa vérification.';
+    v_button := 'Payer ' || v_amount; v_url := r.payment_link;
+  elsif p_kind = 'pending' then
+    v_subject := 'Demande d''abonnement reçue : ' || v_plan;
+    v_body := 'Bonjour ' || v_name || E',\n\nNous avons bien reçu votre demande d''abonnement pour « ' || v_project || E' ».\n'
+      || 'Offre : ' || v_offer || E'\nMontant : ' || v_amount
+      || E'\n\nVotre lien de paiement vous sera envoyé par e-mail sous quelques heures.';
+    v_button := 'Suivre ma demande'; v_url := v_follow;
+  elsif p_kind = 'rejected' then
+    v_subject := 'Paiement non retrouvé : référence ' || coalesce(p_extra ->> 'ref', '—');
+    v_body := 'Bonjour ' || v_name || E',\n\nNous ne retrouvons pas le paiement correspondant à la référence '
+      || coalesce(p_extra ->> 'ref', '—') || ' (' || coalesce(p_extra ->> 'reason', 'paiement introuvable') || E').\n\n'
+      || 'Vérifiez la référence reçue après le paiement et renvoyez-la depuis votre espace « Abonnement ». '
+      || 'Si vous n''avez pas encore payé, utilisez ce lien : ' || coalesce(r.payment_link, v_follow);
+    v_button := 'Renvoyer la référence'; v_url := v_follow;
+  elsif p_kind = 'activated' then
+    v_subject := 'Paiement validé : votre accès Numera Agentic est actif';
+    v_body := 'Bonjour ' || v_name || E',\n\nMerci ! Votre paiement de ' || v_amount || ' est validé. '
+      || 'Votre formule ' || v_plan || ' est active jusqu''au ' || coalesce(p_extra ->> 'end_date', '—') || E'.\n\n'
+      || 'Votre agent peut reprendre la prospection.';
+    v_button := 'Ouvrir Numera Agentic'; v_url := app_url();
+  elsif p_kind = 'reminder' then
+    v_subject := 'Rappel : votre paiement Numera Agentic est en attente';
+    v_body := 'Bonjour ' || v_name || E',\n\nVotre lien de paiement (' || v_offer || ', ' || v_amount || ') vous attend toujours.'
+      || E'\n\nUne fois le paiement effectué, indiquez la référence de transaction dans votre espace « Abonnement » '
+      || 'pour activer votre accès.';
+    v_button := 'Payer ' || v_amount; v_url := coalesce(r.payment_link, v_follow);
+  else
+    return;
+  end if;
+  perform mail_send(request_recipient(r), v_subject, v_body, v_button, v_url);
+end $$;
+
+-- Test depuis l'espace propriétaire : e-mail vers l'adresse des alertes.
+create or replace function admin_test_email()
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare v_to text; v_url text;
+begin
+  if not is_platform_admin() then raise exception 'Accès réservé au propriétaire de la plateforme'; end if;
+  select value ->> 'owner_email', value ->> 'mail_function_url' into v_to, v_url from platform_settings where key = 'notifications';
+  if v_to is null then raise exception 'Adresse des alertes non renseignée (platform_settings.notifications.owner_email)'; end if;
+  if v_url is null then raise exception 'Fonction d''envoi non configurée (platform_settings.notifications.mail_function_url)'; end if;
+  perform mail_send(v_to, 'Test : les e-mails Numera Agentic fonctionnent',
+    E'Bonjour,\n\nCet e-mail confirme que votre plateforme peut envoyer des e-mails depuis votre Gmail.',
+    'Ouvrir l''espace propriétaire', app_url() || '/admin');
+  return v_to;
+end $$;
+
+create or replace function admin_email_log(p_limit int default 10)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $$
+declare r jsonb;
+begin
+  if not is_platform_admin() then raise exception 'Accès réservé au propriétaire de la plateforme'; end if;
+  select coalesce(jsonb_agg(to_jsonb(e) order by e.created_at desc), '[]'::jsonb) into r
+  from (select id, to_email, subject, status, error, created_at, sent_at from email_log
+        order by created_at desc limit least(greatest(p_limit, 1), 50)) e;
+  return r;
+end $$;
 
 -- Avant l'enregistrement : lien préparé valide pour cette offre → envoyé tout de suite.
 create or replace function payment_request_attach_link() returns trigger
@@ -292,26 +380,21 @@ create trigger payment_requests_attach_link before insert on payment_requests
 create or replace function payment_request_notify() returns trigger
 language plpgsql security definer set search_path = public
 as $$
-declare v_to text; v_params jsonb; v_who text; v_end timestamptz;
+declare v_to text; v_who text; v_end timestamptz; v_plan text;
 begin
   v_to := request_recipient(new);
-  v_params := request_params(new);
+  select name into v_plan from plans where id = new.plan_id;
   v_who := concat_ws(E'\n',
     'Client : ' || coalesce(new.contact_name, '?') || coalesce(' · ' || v_to, ''),
     'Projet : ' || coalesce(new.project, (select name from organizations where id = new.organization_id)),
     'Téléphone : ' || coalesce(new.contact_phone, '—'),
-    'Offre : ' || (v_params ->> 'PLAN') || ' · ' || (v_params ->> 'PERIOD'),
-    'Montant : ' || (v_params ->> 'AMOUNT'));
+    'Offre : ' || v_plan || ' · ' || case new.billing_interval when 'year' then '1 an' else '1 mois' end,
+    'Montant : ' || fmt_amount(new.amount, new.currency));
 
   if tg_op = 'INSERT' then
-    perform brevo_add_contact(v_to, new.contact_name, new.contact_phone);
-    if new.status = 'link_sent' then
-      perform brevo_email('client_link', v_to, new.contact_name, v_params);
-    else
-      perform brevo_email('client_pending', v_to, new.contact_name, v_params);
-    end if;
+    perform client_mail(case when new.status = 'link_sent' then 'link' else 'pending' end, new);
     perform notify_owner(
-      case new.kind when 'renewal' then '🔁 Renouvellement : ' else '🧾 Nouvel abonnement : ' end
+      case new.kind when 'renewal' then 'Renouvellement : ' else 'Nouvel abonnement : ' end
         || coalesce(new.project, new.contact_name, 'client'),
       v_who || E'\n\n' || case when new.status = 'link_sent'
         then 'Lien Neero envoyé automatiquement au client. Vérifiez le paiement dans Neero dès qu''il déclare sa référence.'
@@ -319,22 +402,22 @@ begin
       case when new.status = 'link_sent' then 'Voir les paiements' else 'Coller le lien Neero' end);
 
   elsif new.status = 'link_sent' and old.status = 'awaiting_link' then
-    perform brevo_email('client_link', v_to, new.contact_name, v_params);
+    perform client_mail('link', new);
 
   elsif new.status = 'reference_submitted' and old.status is distinct from 'reference_submitted' then
-    perform notify_owner('💰 Paiement déclaré : ' || coalesce(new.project, new.contact_name, 'client'),
+    perform notify_owner('Paiement déclaré : ' || coalesce(new.project, new.contact_name, 'client'),
       v_who || E'\nRéférence : ' || coalesce(new.transaction_ref, '—')
         || E'\n\nVérifiez ce paiement dans Neero, puis validez-le.', 'Valider le paiement');
 
   elsif new.status = 'link_sent' and old.status = 'reference_submitted' then
-    perform brevo_email('client_rejected', v_to, new.contact_name, v_params || jsonb_build_object(
-      'REF', html_escape(coalesce(old.transaction_ref, '—')),
-      'REASON', html_escape(coalesce(split_part(new.rejection_reason, ' (réf.', 1), 'paiement introuvable'))));
+    perform client_mail('rejected', new, jsonb_build_object(
+      'ref', coalesce(old.transaction_ref, '—'),
+      'reason', coalesce(split_part(new.rejection_reason, ' (réf.', 1), 'paiement introuvable')));
 
   elsif new.status = 'validated' and old.status is distinct from 'validated' then
     select current_period_end into v_end from subscriptions where organization_id = new.organization_id;
-    perform brevo_email('client_activated', v_to, new.contact_name,
-      v_params || jsonb_build_object('END_DATE', to_char(v_end at time zone 'Africa/Douala', 'DD/MM/YYYY')));
+    perform client_mail('activated', new,
+      jsonb_build_object('end_date', to_char(v_end at time zone 'Africa/Douala', 'DD/MM/YYYY')));
   end if;
   return new;
 end $$;
@@ -588,7 +671,7 @@ begin
     where pr.status = 'link_sent' and pr.link_sent_at < now() - interval '2 days'
       and (pr.last_reminder_at is null or pr.last_reminder_at < now() - interval '2 days')
   loop
-    perform brevo_email('client_reminder', request_recipient(r), r.contact_name, request_params(r));
+    perform client_mail('reminder', r);
     insert into alerts (organization_id, kind, title, body, link_path)
     values (r.organization_id, 'billing', '⏳ Votre paiement est en attente',
             'Votre lien de paiement (' || fmt_amount(r.amount, r.currency) || ') vous attend dans « Abonnement ». '
@@ -666,10 +749,10 @@ declare f text;
 begin
   -- Fonctions internes : serveur uniquement.
   foreach f in array array[
-    'html_escape(text)', 'app_url()', 'fmt_amount(numeric, text)', 'brevo_post(text, jsonb)',
-    'brevo_email(text, text, text, jsonb)', 'brevo_add_contact(text, text, text)',
+    'html_escape(text)', 'app_url()', 'fmt_amount(numeric, text)', 'mail_hook_check(text)',
+    'mail_html(text, text, text, text)', 'mail_send(text, text, text, text, text)',
     'notify_owner_telegram(text)', 'notify_owner(text, text, text)',
-    'request_recipient(payment_requests)', 'request_params(payment_requests)',
+    'request_recipient(payment_requests)', 'client_mail(text, payment_requests, jsonb)',
     'payment_request_attach_link()', 'payment_request_notify()', 'billing_daily()', 'billing_reminders()'
   ] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
@@ -678,9 +761,12 @@ begin
   foreach f in array array[
     'request_subscription(text, text, text, text, text, text, text)', 'submit_payment_reference(uuid, text)',
     'admin_payment_requests(boolean)', 'admin_plan_links()', 'admin_set_plan_link(text, text, text)',
-    'admin_set_payment_link(uuid, text)', 'admin_validate_payment(uuid)', 'admin_reject_payment(uuid, text)'
+    'admin_set_payment_link(uuid, text)', 'admin_validate_payment(uuid)', 'admin_reject_payment(uuid, text)',
+    'admin_test_email()', 'admin_email_log(integer)'
   ] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
 end $$;
+grant execute on function mail_hook_check(text) to service_role;
+grant select, update on email_log to service_role;

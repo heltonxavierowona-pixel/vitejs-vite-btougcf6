@@ -548,3 +548,6 @@ a.btn { text-decoration: none; display: inline-block; }
 .subscribe-form .btn { justify-self: start; }
 .plan-links .queue { margin-top: 12px; }
 .plan-link-url { overflow-wrap: anywhere; }
+.email-panel .queue { margin-top: 12px; }
+.email-row strong { overflow-wrap: anywhere; }
+.error-text { color: var(--warn); overflow-wrap: anywhere; }
