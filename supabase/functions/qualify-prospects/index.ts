@@ -65,7 +65,7 @@ Deno.serve(handler(async (req) => {
       segments: product.analysis?.segments ?? [],
       profils: fresh.map((i, n) => ({ n, texte: i.text.slice(0, 3000) })),
     }),
-    maxTokens: 400 + 250 * fresh.length,
+    maxTokens: 600 + 400 * fresh.length,
     temperature: 0.1,
     orgId,
     feature: 'qualify',

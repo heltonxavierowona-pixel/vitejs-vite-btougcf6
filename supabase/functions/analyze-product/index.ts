@@ -42,7 +42,8 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, au format :
   "hooks": [""],
   "warnings": [""]
 }
-Les 5 canaux doivent tous apparaître dans "channels". Écris en français.`
+Les 5 canaux doivent tous apparaître dans "channels". Écris en français.
+Sois concis : 2 ou 3 raisons de 15 mots maximum par canal, une approche de 2 phrases maximum.`
 
 interface Product {
   id: string
@@ -76,7 +77,7 @@ Deno.serve(handler(async (req) => {
       pays: product.countries,
       niveau_prix: product.price_level,
     }),
-    maxTokens: 2000,
+    maxTokens: 4000,
     temperature: 0.3,
     orgId,
     feature: 'analyze_product',
