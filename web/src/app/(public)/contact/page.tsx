@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { brand } from '@/lib/brand';
+import { brand, phoneNumbers } from '@/lib/brand';
 import { LegalPage } from '@/components/public';
 
 export const metadata: Metadata = {
@@ -25,7 +25,9 @@ export default function ContactPage() {
         {c.phone && (
           <div className="px-4 py-3">
             <dt className="text-sm text-inksoft">Téléphone / WhatsApp</dt>
-            <dd><a href={`tel:${c.phone.replace(/\s/g, '')}`}>{c.phone}</a></dd>
+            {phoneNumbers(c.phone).map((p) => (
+              <dd key={p.tel}><a href={`tel:${p.tel}`}>{p.label}</a></dd>
+            ))}
           </div>
         )}
         {address && (

@@ -51,12 +51,22 @@ const COMPANY: CompanyInfo = {
   city: process.env.NEXT_PUBLIC_COMPANY_CITY || 'Yaoundé',
   country: 'Cameroun',
   email: process.env.NEXT_PUBLIC_COMPANY_EMAIL || 'heltonxavierowona@gmail.com',
-  phone: process.env.NEXT_PUBLIC_COMPANY_PHONE || '+237 656 56 67 62',
+  /** Un ou plusieurs numéros, séparés par « / ». */
+  phone: process.env.NEXT_PUBLIC_COMPANY_PHONE || '+237 656 56 67 62 / +237 654 36 40 96',
   /** Responsable de la publication. */
   publisher: process.env.NEXT_PUBLIC_COMPANY_PUBLISHER || '',
   /** Hébergeur du site (nom et adresse). */
   host: 'Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, États-Unis',
 };
+
+/** Sépare les numéros de `company.phone` (« / » ou « , ») pour un lien d'appel chacun. */
+export function phoneNumbers(phone: string): { label: string; tel: string }[] {
+  return phone
+    .split(/[\/,]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((label) => ({ label, tel: label.replace(/[^\d+]/g, '') }));
+}
 
 export const brand = {
   name: 'Numera',

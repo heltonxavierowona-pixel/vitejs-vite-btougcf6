@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { brand } from '@/lib/brand';
+import { brand, phoneNumbers } from '@/lib/brand';
 import { Logo } from '@/components/brand';
 
 /* ============================================================
@@ -62,7 +62,9 @@ export function PublicFooter() {
           <h2 className="font-semibold mb-2">Contact</h2>
           <ul className="space-y-1.5 text-inksoft">
             <li><a href={`mailto:${c.email}`} className="hover:text-ink">{c.email}</a></li>
-            {c.phone && <li><a href={`tel:${c.phone.replace(/\s/g, '')}`} className="hover:text-ink">{c.phone}</a></li>}
+            {phoneNumbers(c.phone).map((p) => (
+              <li key={p.tel}><a href={`tel:${p.tel}`} className="hover:text-ink">{p.label}</a></li>
+            ))}
             <li>{[c.address, c.city, c.country].filter(Boolean).join(', ')}</li>
           </ul>
         </div>
