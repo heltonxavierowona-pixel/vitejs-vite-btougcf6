@@ -25,9 +25,19 @@ Deno.serve(handler(async (req) => {
     throw new HttpError(502, `Échange du code Meta impossible: ${JSON.stringify(tokenData.error ?? tokenData)}`)
   }
 
+  // Token utilisateur longue durée : les tokens de Page qui en découlent n'expirent pas
+  // (avec le token court, ils expireraient au bout d'une heure).
+  const longUrl = new URL(`${GRAPH}/oauth/access_token`)
+  longUrl.searchParams.set('grant_type', 'fb_exchange_token')
+  longUrl.searchParams.set('client_id', Deno.env.get('META_APP_ID')!)
+  longUrl.searchParams.set('client_secret', Deno.env.get('META_APP_SECRET')!)
+  longUrl.searchParams.set('fb_exchange_token', tokenData.access_token)
+  const longData = await (await fetch(longUrl)).json().catch(() => ({}))
+  const userToken: string = longData.access_token ?? tokenData.access_token
+
   const pages = await graph<{ data: Page[] }>(
     'me/accounts?fields=id,name,access_token,instagram_business_account{id,username}',
-    { token: tokenData.access_token },
+    { token: userToken },
   )
   if (!pages.data.length) throw new HttpError(400, 'Aucune Page Facebook autorisée')
 

@@ -7,7 +7,7 @@ import { type AiContext, buildProfileUser, normalizeProfile, PROFILE_SYSTEM } fr
 
 Deno.serve(handler(async (req) => {
   // n8n (secret partagé) ou utilisateur connecté (bouton « Mettre à jour le profil »).
-  const jwt = isServiceCall(req) ? undefined : (await requireUser(req)).jwt
+  const jwt = (await isServiceCall(req)) ? undefined : (await requireUser(req)).jwt
   const { conversation_id } = (await req.json()) as { conversation_id: string }
   if (!conversation_id) throw new HttpError(400, 'conversation_id requis')
 

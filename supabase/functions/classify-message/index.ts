@@ -21,7 +21,7 @@ interface MessageRow {
 }
 
 Deno.serve(handler(async (req) => {
-  const service = isServiceCall(req)
+  const service = await isServiceCall(req)
   const jwt = service ? undefined : (await requireUser(req)).jwt
   const { message_id } = (await req.json()) as { message_id: string }
   if (!message_id) throw new HttpError(400, 'message_id requis')

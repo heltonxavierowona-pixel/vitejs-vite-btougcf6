@@ -94,8 +94,16 @@ export function handler(fn: (req: Request) => Promise<Response>) {
   }
 }
 
-// Appel serveur à serveur (n8n) : secret partagé dans l'en-tête x-numera-secret.
-export function isServiceCall(req: Request): boolean {
-  const secret = Deno.env.get('NUMERA_WEBHOOK_SECRET')
-  return !!secret && req.headers.get('x-numera-secret') === secret
+// Appel serveur à serveur : secret partagé dans l'en-tête x-numera-secret, soit celui de
+// NUMERA_WEBHOOK_SECRET (n8n), soit celui que la base envoie (Vault, vérifié par hook_secret_ok).
+const trustedSecrets = new Set<string>()
+export async function isServiceCall(req: Request): Promise<boolean> {
+  const received = req.headers.get('x-numera-secret') ?? ''
+  if (!received) return false
+  const env = Deno.env.get('NUMERA_WEBHOOK_SECRET')
+  if (env && received === env) return true
+  if (trustedSecrets.has(received)) return true
+  const ok = await rest<boolean>('rpc/hook_secret_ok', { method: 'POST', body: { p_secret: received } }).catch(() => false)
+  if (ok) trustedSecrets.add(received)
+  return ok === true
 }

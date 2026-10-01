@@ -17,7 +17,7 @@ interface ConversationRow {
 }
 
 Deno.serve(handler(async (req) => {
-  if (!isServiceCall(req)) throw new HttpError(401, 'Réservé au serveur')
+  if (!(await isServiceCall(req))) throw new HttpError(401, 'Réservé au serveur')
   const { conversation_id } = (await req.json()) as { conversation_id: string }
   if (!conversation_id) throw new HttpError(400, 'conversation_id requis')
 
