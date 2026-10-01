@@ -4,7 +4,41 @@ Deux ajouts :
 - chaque client **paie son abonnement** depuis la plateforme (page **Abonnement**) ;
 - vous, le propriétaire, avez un **Espace propriétaire** qui montre tous les abonnés et ce qu'ils vous rapportent chaque mois.
 
-## 8.1 Ce que voit le client
+## 8.0 Mode actuel : encaissement manuel (liens Neero + e-mails Brevo)
+
+Stripe, PayPal et Flutterwave sont désactivés (`billing_mode = "manual"`, migration 0011). On les réactive en remettant `billing_mode` à `"automatic"` et les `providers` à `true`.
+
+**Parcours client**
+1. Sur **Abonnement**, le client clique « S'abonner ». Un formulaire lui demande son nom, son e-mail (pré-rempli), son téléphone WhatsApp, son projet (pré-rempli) et l'offre choisie. Les prix sont en FCFA.
+2. Son compte passe **en attente de paiement**. S'il était en essai, il garde l'accès jusqu'à la fin de l'essai.
+3. Il est ajouté à la liste Brevo « Demandes d'abonnement », puis :
+   - si un lien Neero valide existe pour son offre, il reçoit **aussitôt** l'e-mail « Lien de paiement », même la nuit ;
+   - sinon, il reçoit l'e-mail « Demande reçue » : son lien arrive sous quelques heures.
+4. Il paie, puis saisit la **référence de transaction** sur la page Abonnement.
+5. Quand le propriétaire valide le paiement, l'accès est activé et le client reçoit l'e-mail « Accès activé ».
+
+**Votre travail (Espace propriétaire)**
+- **Liens Neero par offre** : collez un lien par offre et par période. Chaque lien est valable 10 jours ; renouvelez-le tous les 9 jours. Un e-mail de rappel part la veille de l'expiration. Un lien expiré n'est jamais envoyé.
+- **Paiements à traiter** : vérifiez chaque référence dans Neero, puis cliquez « Valider » ou « Refuser ». En cas de refus, le client reçoit un e-mail et peut renvoyer une référence.
+- Vous êtes prévenu **par e-mail** (Brevo → votre Gmail) à chaque nouvelle demande et à chaque référence déclarée. Telegram reste possible, mais il est facultatif.
+
+**Tous les matins à 8 h (Douala)**
+- Les accès échus sont coupés.
+- Une demande de renouvellement est créée 5 jours avant l'échéance, et le lien de l'offre part automatiquement.
+- Les clients qui n'ont pas payé sont relancés tous les 2 jours.
+- Vous recevez un récapitulatif.
+
+**Réglages** (`platform_settings.notifications`) : votre e-mail, l'expéditeur, l'identifiant de la liste Brevo, et les identifiants des 6 modèles Brevo :
+- `client_link`
+- `client_pending`
+- `client_activated`
+- `client_rejected`
+- `client_reminder`
+- `owner_notice`
+
+La clé API Brevo se range dans Supabase Vault sous le nom `brevo_api_key`. Ne la collez jamais ailleurs.
+
+## 8.1 Ce que voit le client (paiements automatiques, désactivés pour l'instant)
 
 1. **Inscription → 14 jours d'essai** de la formule Pro, sans moyen de paiement. L'essai démarre automatiquement : un trigger sur `organizations`.
 2. Page **Abonnement** :
