@@ -188,6 +188,8 @@ Le FCFA n'a pas de sous-unité : les centimes servent uniquement à la précisio
 
 ## ⚠️ À faire avant toute mise en production
 
+Liste de contrôle complète (fait / reste à faire) : **[docs/MISE-EN-PRODUCTION.md](docs/MISE-EN-PRODUCTION.md)**.
+
 1. **Faire valider les règles fiscales par un expert-comptable.** Tout est centralisé dans `api/src/tax/tax.constants.ts` :
    - règle d'arrondi exigée par la DGI ;
    - modalités exactes du report de crédit de TVA ;

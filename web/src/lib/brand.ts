@@ -34,21 +34,26 @@ export interface CompanyInfo {
  *  Une valeur vide masque la ligne correspondante.
  * ==========================================================
  */
+/**
+ * Chaque valeur peut être remplacée dans Vercel (projet « numera »,
+ * variables NEXT_PUBLIC_COMPANY_*), puis prise en compte au
+ * redéploiement du site : inutile de toucher au code.
+ */
 const COMPANY: CompanyInfo = {
   /** Raison sociale ou nom de l'entrepreneur. */
-  legalName: 'Numera',
+  legalName: process.env.NEXT_PUBLIC_COMPANY_LEGAL_NAME || 'Numera',
   /** Forme juridique : SARL, SAS, entreprise individuelle… */
-  legalForm: '',
-  /** N° d'immatriculation (RCCM, SIREN…). */
-  registration: '',
+  legalForm: process.env.NEXT_PUBLIC_COMPANY_LEGAL_FORM || '',
+  /** N° d'immatriculation (RCCM, NIU…). */
+  registration: process.env.NEXT_PUBLIC_COMPANY_REGISTRATION || '',
   /** Adresse du siège. */
-  address: '',
-  city: 'Yaoundé',
+  address: process.env.NEXT_PUBLIC_COMPANY_ADDRESS || '',
+  city: process.env.NEXT_PUBLIC_COMPANY_CITY || 'Yaoundé',
   country: 'Cameroun',
-  email: 'heltonxavierowona@gmail.com',
-  phone: '+237 656 56 67 62',
+  email: process.env.NEXT_PUBLIC_COMPANY_EMAIL || 'heltonxavierowona@gmail.com',
+  phone: process.env.NEXT_PUBLIC_COMPANY_PHONE || '+237 656 56 67 62',
   /** Responsable de la publication. */
-  publisher: '',
+  publisher: process.env.NEXT_PUBLIC_COMPANY_PUBLISHER || '',
   /** Hébergeur du site (nom et adresse). */
   host: 'Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, États-Unis',
 };
