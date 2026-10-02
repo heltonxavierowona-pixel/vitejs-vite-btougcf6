@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function TermsPage() {
   const c = brand.company;
   return (
-    <LegalPage title="Conditions générales de vente" updated="29 septembre 2026">
+    <LegalPage title="Conditions générales de vente" updated="2 octobre 2026">
       <p>
         Les présentes conditions régissent la souscription et l’utilisation des abonnements au
         service en ligne {brand.name} (ci-après « le Service »), édité par :
@@ -48,7 +48,7 @@ export default function TermsPage() {
 
       <h2>3. Essai gratuit</h2>
       <p>
-        Toute nouvelle inscription bénéficie d’un essai gratuit de 14 jours (entreprises) ou de 30
+        Toute nouvelle inscription bénéficie d’un essai gratuit de 7 jours (entreprises) ou de 14
         jours (cabinets comptables), sans moyen de paiement. À l’issue de l’essai, le Service
         passe en consultation seule tant qu’aucune formule n’est souscrite. Aucun prélèvement
         n’intervient sans souscription expresse.

@@ -49,7 +49,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     priceMonthly: 10_000 * 100,
     maxEntities: 1,
     maxUsers: 2,
-    trialDays: 14,
+    trialDays: 7,
     features: [
       'Factures illimitées',
       'Déclaration TVA mensuelle',
@@ -65,7 +65,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     priceMonthly: 25_000 * 100,
     maxEntities: 1,
     maxUsers: 6,
-    trialDays: 14,
+    trialDays: 7,
     features: [
       'Tout le plan Essentiel',
       'Multi-utilisateurs',
@@ -81,7 +81,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     priceMonthly: 50_000 * 100,
     maxEntities: 10,
     maxUsers: 3,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Tableau de bord portefeuille',
       'Suivi des échéances par client',
@@ -96,7 +96,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     priceMonthly: 120_000 * 100,
     maxEntities: 30,
     maxUsers: 10,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Tout le plan précédent',
       'Charge par collaborateur',
@@ -111,7 +111,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     priceMonthly: 250_000 * 100,
     maxEntities: UNLIMITED,
     maxUsers: UNLIMITED,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Dossiers illimités',
       'Utilisateurs illimités',

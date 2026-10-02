@@ -22,7 +22,7 @@ export const PUBLIC_PLANS = [
     audience: 'ENTREPRISE',
     label: 'PME Essentiel',
     priceMonthly: 10_000 * 100,
-    trialDays: 14,
+    trialDays: 7,
     features: [
       'Factures illimitées',
       'Déclaration TVA mensuelle',
@@ -35,7 +35,7 @@ export const PUBLIC_PLANS = [
     audience: 'ENTREPRISE',
     label: 'PME Pro',
     priceMonthly: 25_000 * 100,
-    trialDays: 14,
+    trialDays: 7,
     features: [
       'Tout le plan Essentiel',
       'Multi-utilisateurs',
@@ -48,7 +48,7 @@ export const PUBLIC_PLANS = [
     audience: 'CABINET',
     label: 'Cabinet — jusqu’à 10 dossiers',
     priceMonthly: 50_000 * 100,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Tableau de bord portefeuille',
       'Suivi des échéances par client',
@@ -60,7 +60,7 @@ export const PUBLIC_PLANS = [
     audience: 'CABINET',
     label: 'Cabinet — jusqu’à 30 dossiers',
     priceMonthly: 120_000 * 100,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Tout le plan précédent',
       'Charge par collaborateur',
@@ -72,7 +72,7 @@ export const PUBLIC_PLANS = [
     audience: 'CABINET',
     label: 'Cabinet — dossiers illimités',
     priceMonthly: 250_000 * 100,
-    trialDays: 30,
+    trialDays: 14,
     features: [
       'Dossiers illimités',
       'Utilisateurs illimités',

@@ -41,7 +41,7 @@ const FEATURES = [
 const FAQ = [
   {
     q: 'Faut-il une carte bancaire pour l’essai ?',
-    a: 'Non. L’essai gratuit (14 jours pour une entreprise, 30 jours pour un cabinet) s’ouvre à l’inscription, sans moyen de paiement.',
+    a: 'Non. L’essai gratuit (7 jours pour une entreprise, 14 jours pour un cabinet) s’ouvre à l’inscription, sans moyen de paiement.',
   },
   {
     q: 'Comment payer l’abonnement ?',

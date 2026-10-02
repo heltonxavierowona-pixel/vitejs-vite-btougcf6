@@ -80,7 +80,7 @@ npm run dev
 
 ## Fonctionnalités
 
-- **Inscription** entreprise ou cabinet, avec un essai gratuit ouvert automatiquement (14 jours pour une PME, 30 pour un cabinet).
+- **Inscription** entreprise ou cabinet, avec un essai gratuit ouvert automatiquement (7 jours pour une PME, 14 pour un cabinet).
 - **Factures de vente** : brouillon modifiable, puis validation qui attribue un numéro définitif (`FA-2026-00001`) et fige la facture.
 - **Factures d'achat** : TVA déductible, numéro d'enregistrement interne (`AC-…`) et référence du fournisseur.
 - **Avoirs** totaux ou partiels (`AV-…`), plafonnés au montant de la facture corrigée.
