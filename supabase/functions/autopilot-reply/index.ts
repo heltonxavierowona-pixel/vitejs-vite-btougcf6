@@ -1,11 +1,12 @@
 // POST { conversation_id }
-// Pilote automatique : appelé par n8n (workflow 03) après chaque message reçu.
-// Rédige UNE réponse ; les garde-fous finaux sont revérifiés en SQL (queue_autopilot_reply) :
+// Agent commercial autonome : appelé par numera-hooks après chaque message reçu
+// (WhatsApp, Messenger, Instagram). Rédige UNE réponse et conclut la vente quand le prospect est
+// prêt (lien d'achat ou contact du propriétaire). Garde-fous revérifiés en SQL (queue_autopilot_reply) :
 //   sujet sensible → validation humaine ; passage de relais → pause de l'IA ; sinon → envoi.
 import { handler, HttpError, isServiceCall, json, rest } from '../_shared/supabase.ts'
 import { chatJSON, MODELS } from '../_shared/llm.ts'
 import {
-  type AiContext, applyClosingLinks, buildAutopilotSystem, buildDraftUser, MEDIA_PLACEHOLDER, normalizeAutopilot,
+  type AiContext, applyClosingLinks, applySaleLinks, buildAutopilotSystem, type Channel, buildDraftUser, MEDIA_PLACEHOLDER, normalizeAutopilot,
 } from '../_shared/prompts.ts'
 
 interface ConversationRow {
@@ -57,20 +58,28 @@ Deno.serve(handler(async (req) => {
 
   const raw = await chatJSON({
     model: MODELS.write,
-    system: buildAutopilotSystem(ctx),
+    system: buildAutopilotSystem(ctx, channel as Channel),
     user: buildDraftUser(ctx, 'reply'),
     maxTokens: 600,
     temperature: 0.5,
     orgId: ctx.organization_id,
     feature: 'autopilot',
   })
-  const reply = normalizeAutopilot(raw, last.text)
-  // Liens de closing insérés par le code ; l'étape n'est enregistrée que si le lien est bien dans le message.
-  const closing = applyClosingLinks(reply.text, ctx.closing, reply.closing_action)
+  const reply = normalizeAutopilot(raw, last.text, channel as Channel, ctx.product?.knowledge)
+  // Liens insérés par le code (jamais écrits par l'IA) ; l'étape n'est enregistrée que si le lien est bien dans le message.
+  const sale = applySaleLinks(reply.text, ctx, reply.closing_action)
+  const closing = applyClosingLinks(sale.text, ctx.closing, reply.closing_action)
   reply.text = closing.text
   const recordStep = async (result: { action?: string }) => {
-    if (closing.step && (result.action === 'queued' || result.action === 'pending_approval')) {
+    if (result.action !== 'queued' && result.action !== 'pending_approval') return result
+    if (closing.step) {
       await rest('rpc/record_closing_step', { method: 'POST', body: { p_prospect: conv.prospect_id, p_step: closing.step } })
+    }
+    // Lien d'achat ou contact du propriétaire envoyé : prospect « chaud » → alerte e-mail au vendeur.
+    if (sale.step) {
+      await rest(`prospects?id=eq.${conv.prospect_id}&stage=not.in.(hot,won,lost)`, {
+        method: 'PATCH', prefer: 'return=minimal', body: { stage: 'hot' },
+      })
     }
     return result
   }
@@ -85,5 +94,5 @@ Deno.serve(handler(async (req) => {
     return json({ action: 'escalated', reason: reply.reason })
   }
   const result = await queue(reply.text, reply.sensitive, reply.topics, reply.escalate, reply.reason) as { action?: string }
-  return json({ ...(await recordStep(result)), closing_step: closing.step })
+  return json({ ...(await recordStep(result)), closing_step: closing.step, sale_step: sale.step })
 }))

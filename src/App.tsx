@@ -7,6 +7,7 @@ import InboxPage from './pages/InboxPage'
 import LoginPage from './pages/LoginPage'
 import OverviewPage from './pages/OverviewPage'
 import ProductsPage from './pages/ProductsPage'
+import PostsPage from './pages/PostsPage'
 import ProspectsPage from './pages/ProspectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ValidationsPage from './pages/ValidationsPage'
@@ -34,6 +35,7 @@ const NAV = [
   { to: '/', label: 'Vue d\'ensemble' },
   { to: '/produits', label: 'Produits' },
   { to: '/canaux', label: 'Canaux' },
+  { to: '/publications', label: 'Publications' },
   { to: '/prospects', label: 'Prospects' },
   { to: '/conversations', label: 'Conversations' },
   { to: '/validations', label: 'Validations' },
@@ -191,6 +193,7 @@ export default function App() {
           <Route path="/" element={<OverviewPage />} />
           <Route path="/produits" element={<ProductsPage />} />
           <Route path="/canaux" element={<ChannelsPage />} />
+          <Route path="/publications" element={<PostsPage />} />
           <Route path="/conversations" element={<InboxPage />} />
           <Route path="/prospects" element={<ProspectsPage />} />
           <Route path="/parametres" element={<SettingsPage />} />

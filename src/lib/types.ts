@@ -41,7 +41,16 @@ export interface ProductClosing {
   call_minutes?: number
 }
 
-export interface Product extends ProductInput {
+// Conclusion de la vente par l'agent : digital → lien d'achat ; physique → WhatsApp du propriétaire.
+export interface ProductSale {
+  sale_mode?: 'digital' | 'physique' | null
+  purchase_url?: string | null
+  owner_name?: string | null
+  owner_whatsapp?: string | null
+  image_url?: string | null
+}
+
+export interface Product extends ProductInput, ProductSale {
   id: string
   knowledge?: string | null
   closing?: ProductClosing
@@ -201,6 +210,7 @@ export interface Automation {
   min_confidence: number
   autopilot_whatsapp: boolean
   autopilot_social: boolean
+  ai_comments?: boolean
   followups_enabled: boolean
   followup_delays: [number, number]
 }
@@ -380,4 +390,23 @@ export interface AdminStats {
   by_provider: { provider: string; revenue: number }[]
   subscriptions: AdminSubscription[]
   recent_payments: { organization: string; provider: string; amount: number; currency: string; amount_xaf: number; status: string; paid_at: string }[]
+}
+
+export type PostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed'
+
+export interface Post {
+  id: string
+  product_id: string | null
+  channel: 'facebook' | 'instagram'
+  body: string
+  image_url: string | null
+  image_idea: string | null
+  status: PostStatus
+  scheduled_at: string | null
+  published_at: string | null
+  permalink: string | null
+  error: string | null
+  source: 'ai' | 'user'
+  comments: number
+  created_at: string
 }

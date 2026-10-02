@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
 import { channelInfo } from '../data/channels'
-import { analyzeProduct, createProduct, listProducts, saveProductClosing, saveProductKnowledge } from '../lib/api'
-import type { Audience, OfferType, PriceLevel, Product, ProductAnalysis, ProductClosing, ProductInput } from '../lib/types'
+import { analyzeProduct, createProduct, listProducts, saveProductClosing, saveProductKnowledge, saveProductSale, uploadPostImage } from '../lib/api'
+import type { Audience, OfferType, PriceLevel, Product, ProductAnalysis, ProductClosing, ProductInput, ProductSale } from '../lib/types'
 
 const ROLE_LABEL = { outbound: 'Aller chercher', inbound: 'Attirer', closing: 'Conclure' } as const
 
@@ -165,8 +165,9 @@ function KnowledgeEditor({ product, onSaved }: { product: Product; onSaved: (kno
         <span className="muted small">Seule source de vérité de l'IA</span>
       </div>
       <p className="muted small">
-        Arguments, questions fréquentes, délais, zones de livraison, conditions, liens, prix. L'IA n'affirme rien
-        qui ne soit écrit ici ; les prix et conditions déclenchent une validation avant envoi.
+        Tout ce qu'un bon vendeur doit savoir : à quoi sert le produit, prix, avantages, questions fréquentes, délais,
+        livraison, garanties. L'IA n'affirme rien qui ne soit écrit ici (sans ce texte, elle se base sur la description).
+        Un prix écrit ici est donné directement ; un prix absent passe par « Validations ».
       </p>
       <textarea
         rows={6}
@@ -186,6 +187,91 @@ function KnowledgeEditor({ product, onSaved }: { product: Product; onSaved: (kno
         Enregistrer les connaissances
       </button>
     </section>
+  )
+}
+
+// Comment l'agent conclut : lien d'achat (digital) ou mise en contact avec le propriétaire (physique).
+function SaleEditor({ product, onSaved }: { product: Product; onSaved: (sale: ProductSale) => void }) {
+  const [v, setV] = useState<ProductSale>({
+    sale_mode: product.sale_mode ?? (product.offer_type === 'physique' ? 'physique' : 'digital'),
+    purchase_url: product.purchase_url ?? '', owner_name: product.owner_name ?? '',
+    owner_whatsapp: product.owner_whatsapp ?? '', image_url: product.image_url ?? '',
+  })
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const set = (patch: ProductSale) => { setV({ ...v, ...patch }); setSaved(false) }
+  return (
+    <form
+      className="card form"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (v.sale_mode === 'digital' && v.purchase_url && !/^https?:\/\/\S+$/.test(v.purchase_url)) {
+          setError('Lien d\'achat invalide (https://… attendu)'); return
+        }
+        if (v.sale_mode === 'physique' && v.owner_whatsapp && v.owner_whatsapp.replace(/\D/g, '').length < 9) {
+          setError('Numéro WhatsApp invalide (ex. +237 6XX XX XX XX)'); return
+        }
+        setError(null)
+        const sale = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x === '' ? null : x])) as ProductSale
+        await saveProductSale(product.id, sale)
+        onSaved(sale)
+        setSaved(true)
+      }}
+    >
+      <div className="card-head">
+        <h2>Vente</h2>
+        <span className="muted small">Comment l'agent conclut</span>
+      </div>
+      <p className="muted small">
+        Quand un prospect est prêt à acheter, l'agent lui envoie le lien d'achat (produit digital) ou le met en contact
+        avec le propriétaire sur WhatsApp (produit physique). Vous recevez une alerte « prospect chaud ».
+      </p>
+      <div className="form-row two">
+        <label className="check">
+          <input type="radio" name={`mode-${product.id}`} checked={v.sale_mode === 'digital'} onChange={() => set({ sale_mode: 'digital' })} />
+          <span>Produit digital<small className="muted">formation, logiciel, e-book, abonnement…</small></span>
+        </label>
+        <label className="check">
+          <input type="radio" name={`mode-${product.id}`} checked={v.sale_mode === 'physique'} onChange={() => set({ sale_mode: 'physique' })} />
+          <span>Produit physique ou service<small className="muted">à livrer, à retirer, sur rendez-vous…</small></span>
+        </label>
+      </div>
+      {v.sale_mode === 'digital' ? (
+        <label>
+          Lien d'achat
+          <input type="url" value={v.purchase_url ?? ''} onChange={(e) => set({ purchase_url: e.target.value })} placeholder="https://… (page de paiement, Chariow, Selar, Gumroad…)" />
+        </label>
+      ) : (
+        <div className="form-row two">
+          <label>
+            Nom du propriétaire / vendeur
+            <input value={v.owner_name ?? ''} onChange={(e) => set({ owner_name: e.target.value })} placeholder="Marie" />
+          </label>
+          <label>
+            Son numéro WhatsApp
+            <input type="tel" value={v.owner_whatsapp ?? ''} onChange={(e) => set({ owner_whatsapp: e.target.value })} placeholder="+237 6XX XX XX XX" />
+          </label>
+        </div>
+      )}
+      <label>
+        Image du produit <span className="muted small">(utilisée par défaut dans les publications)</span>
+        <input
+          type="file" accept="image/*" disabled={busy}
+          onChange={async (e) => {
+            const f = e.target.files?.[0]
+            if (!f) return
+            setBusy(true)
+            try { set({ image_url: await uploadPostImage(f) }) } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+            setBusy(false)
+          }}
+        />
+      </label>
+      {v.image_url && <img src={v.image_url} alt="" className="post-thumb" />}
+      {error && <p className="error">{error}</p>}
+      {saved && <p className="success">Enregistré.</p>}
+      <button className="btn" disabled={busy}>{busy ? 'Envoi de l\'image…' : 'Enregistrer la vente'}</button>
+    </form>
   )
 }
 
@@ -209,12 +295,12 @@ function ClosingEditor({ product, onSaved }: { product: Product; onSaved: (closi
       }}
     >
       <div className="card-head">
-        <h2>Closing</h2>
+        <h2>Présentation et appel <span className="muted small">(facultatif)</span></h2>
         <span className="muted small">1. présentation → 2. appel</span>
       </div>
       <p className="muted small">
-        Quand un prospect est prêt sur WhatsApp, l'IA lui envoie d'abord la présentation, puis, après sa réponse,
-        lui propose un appel. Les liens sont insérés tels quels : l'IA ne les écrit jamais elle-même.
+        Si vous avez une présentation, l'IA l'envoie au prospect intéressé avant de conclure. L'appel n'est proposé que si
+        aucune vente (lien d'achat ou WhatsApp du vendeur) n'est configurée. Les liens sont insérés tels quels.
       </p>
       <div className="form-row two">
         <label>
@@ -317,10 +403,10 @@ export default function ProductsPage() {
             </section>
           ) : null}
           {current && !creating && (
-            <ClosingEditor
-              key={`closing-${current.id}`}
+            <SaleEditor
+              key={`sale-${current.id}`}
               product={current}
-              onSaved={(closing) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, closing } : p)))}
+              onSaved={(sale) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, ...sale } : p)))}
             />
           )}
           {current && !creating && (
@@ -328,6 +414,13 @@ export default function ProductsPage() {
               key={current.id}
               product={current}
               onSaved={(knowledge) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, knowledge } : p)))}
+            />
+          )}
+          {current && !creating && (
+            <ClosingEditor
+              key={`closing-${current.id}`}
+              product={current}
+              onSaved={(closing) => setProducts((list) => list.map((p) => (p.id === current.id ? { ...p, closing } : p)))}
             />
           )}
         </div>

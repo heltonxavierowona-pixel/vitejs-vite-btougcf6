@@ -5,7 +5,7 @@ import { DAILY_LIMITS } from './outreach'
 import type {
   AdminPaymentRequest, AdminStats, BillingInterval, BillingMode, PaymentRequest, PlanLink, EmailLogRow, Currency, Entitlements, PaymentProvider, PaymentRow, Plan,
   AiDraft, AlertSettings, Approval, Automation, BrandVoice, ClosingStep, DashboardStats, ProductClosing, WhatsAppTemplate, DraftKind, Intent, IntentOutcome, RelationalProfile,
-  ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Product, ProductInput,
+  ChannelAccount, Conversation, EntryLink, KeywordTrigger, Message, OutreachProfile, Post, Product, ProductInput, ProductSale,
   Prospect, ProspectStage,
 } from './types'
 import type { ChannelId } from '../data/channels'
@@ -705,6 +705,123 @@ export async function saveProductClosing(productId: string, closing: ProductClos
     return
   }
   unwrap(await supabase.from('products').update({ closing }).eq('id', productId))
+}
+
+export async function saveProductSale(productId: string, sale: ProductSale) {
+  if (!supabase) {
+    demo.products = demo.products.map((p) => (p.id === productId ? { ...p, ...sale } : p))
+    return
+  }
+  unwrap(await supabase.from('products').update(sale).eq('id', productId))
+}
+
+// ---------- Publications Facebook / Instagram ----------
+
+const demoPosts: Post[] = []
+
+export async function listPosts(): Promise<Post[]> {
+  if (!supabase) return [...demoPosts]
+  return unwrap(await supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(100))
+}
+
+// L'IA rédige des brouillons (Edge Function generate-posts).
+export async function generatePosts(opts: {
+  productId: string; channels: ('facebook' | 'instagram')[]; count: number; brief?: string
+}): Promise<Post[]> {
+  if (!supabase) {
+    const product = demo.products.find((p) => p.id === opts.productId)
+    const created = opts.channels.flatMap((channel) => Array.from({ length: opts.count }, (_, i): Post => ({
+      id: crypto.randomUUID(), product_id: opts.productId, channel, image_url: product?.image_url ?? null,
+      body: `${product?.name ?? 'Notre offre'} : ${product?.description ?? ''}\n\nCommentez INFO et on vous écrit en privé 📩${channel === 'instagram' ? '\n\n#cameroun #promo' : ''}`,
+      image_idea: i === 0 ? 'Photo du produit en situation' : 'Visuel avant / après', status: 'draft', scheduled_at: null,
+      published_at: null, permalink: null, error: null, source: 'ai', comments: 0, created_at: new Date().toISOString(),
+    })))
+    demoPosts.unshift(...created)
+    return created
+  }
+  const { data, error } = await supabase.functions.invoke('generate-posts', {
+    body: { product_id: opts.productId, channels: opts.channels, count: opts.count, brief: opts.brief },
+  })
+  if (error) {
+    const detail = await (error as { context?: Response }).context?.json?.().catch(() => null)
+    throw new Error(detail?.error ?? error.message)
+  }
+  return data as Post[]
+}
+
+export async function createPost(input: Pick<Post, 'channel' | 'body' | 'image_url' | 'product_id'>): Promise<Post> {
+  if (!supabase) {
+    const p: Post = {
+      ...input, id: crypto.randomUUID(), image_idea: null, status: 'draft', scheduled_at: null, published_at: null,
+      permalink: null, error: null, source: 'user', comments: 0, created_at: new Date().toISOString(),
+    }
+    demoPosts.unshift(p)
+    return p
+  }
+  const { data: u } = await supabase.auth.getUser()
+  return unwrap(await supabase.from('posts')
+    .insert({ ...input, organization_id: await orgId(), source: 'user', created_by: u.user?.id }).select().single())
+}
+
+export async function updatePost(id: string, patch: Partial<Pick<Post, 'body' | 'image_url' | 'status' | 'scheduled_at'>>) {
+  if (!supabase) {
+    const i = demoPosts.findIndex((p) => p.id === id)
+    if (i >= 0) demoPosts[i] = { ...demoPosts[i], ...patch }
+    return
+  }
+  unwrap(await supabase.from('posts').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id))
+}
+
+export async function deletePost(id: string) {
+  if (!supabase) {
+    const i = demoPosts.findIndex((p) => p.id === id)
+    if (i >= 0) demoPosts.splice(i, 1)
+    return
+  }
+  unwrap(await supabase.from('posts').delete().eq('id', id))
+}
+
+// Publication immédiate : la base passe la publication en « publishing » et appelle numera-hooks.
+export async function publishPostNow(id: string) {
+  if (!supabase) {
+    await updatePost(id, { status: 'published' })
+    return
+  }
+  const { error } = await supabase.rpc('request_publish', { p_post: id })
+  if (error) throw new Error(error.message)
+}
+
+// Instagram n'accepte que le JPEG, avec un ratio entre 4:5 et 1,91:1 : l'image est convertie,
+// réduite (1440 px max) et complétée par des bandes blanches si besoin.
+async function toInstagramJpeg(file: File): Promise<Blob> {
+  const img = await createImageBitmap(file)
+  const scale = Math.min(1, 1440 / Math.max(img.width, img.height))
+  const w = Math.round(img.width * scale)
+  const h = Math.round(img.height * scale)
+  const ratio = w / h
+  const cw = ratio < 0.8 ? Math.round(h * 0.8) : w
+  const ch = ratio > 1.91 ? Math.round(w / 1.91) : h
+  const canvas = document.createElement('canvas')
+  canvas.width = cw
+  canvas.height = ch
+  const g = canvas.getContext('2d')!
+  g.fillStyle = '#ffffff'
+  g.fillRect(0, 0, cw, ch)
+  g.drawImage(img, Math.round((cw - w) / 2), Math.round((ch - h) / 2), w, h)
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Image illisible'))), 'image/jpeg', 0.88))
+}
+
+// Image publique (Meta la télécharge) dans post-media/{organisation}/…
+export async function uploadPostImage(file: File): Promise<string> {
+  if (!supabase) return URL.createObjectURL(file)
+  if (!file.type.startsWith('image/')) throw new Error('Choisissez une image')
+  if (file.size > 15 * 1024 * 1024) throw new Error('Image trop lourde (15 Mo maximum)')
+  const jpeg = await toInstagramJpeg(file)
+  const path = `${await orgId()}/${crypto.randomUUID()}.jpg`
+  const { error } = await supabase.storage.from('post-media').upload(path, jpeg, { contentType: 'image/jpeg', upsert: false })
+  if (error) throw new Error(error.message)
+  return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
 }
 
 export async function getProspect(id: string): Promise<Prospect | null> {

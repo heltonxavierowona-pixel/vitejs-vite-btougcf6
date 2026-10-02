@@ -125,8 +125,15 @@ function AutomationForm() {
       <label className="check">
         <input type="checkbox" checked={a.autopilot_social} onChange={(e) => update({ autopilot_social: e.target.checked })} />
         <span>
-          Pilote automatique aussi sur Messenger et Instagram
-          <small className="muted">Désactivé par défaut : ces canaux servent surtout à amener le prospect vers WhatsApp.</small>
+          Agent commercial sur Messenger et Instagram
+          <small className="muted">L'IA répond seule aux messages privés, présente le produit et conclut (lien d'achat ou contact WhatsApp du vendeur).</small>
+        </span>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={a.ai_comments !== false} onChange={(e) => update({ ai_comments: e.target.checked })} />
+        <span>
+          Répondre en privé aux commentaires
+          <small className="muted">Chaque personne qui commente une publication reçoit un message privé de l'agent (sauf commentaires négatifs ou spam).</small>
         </span>
       </label>
       <label className="check">

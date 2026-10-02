@@ -44,6 +44,13 @@ export interface AiContext {
     presentation_url?: string | null
     booking_url?: string | null
   } | null
+  // Conclusion de la vente : produit digital → lien d'achat ; physique → contact du propriétaire.
+  sale?: {
+    mode: 'digital' | 'physique' | null
+    purchase_url?: string | null
+    owner_name?: string | null
+    owner_whatsapp?: string | null
+  } | null
 }
 
 // ---------- Contraintes par canal ----------
@@ -348,7 +355,7 @@ export function insertHandoffLink(text: string, link: string): string {
   return text.includes(HANDOFF_PLACEHOLDER) ? text.split(HANDOFF_PLACEHOLDER).join(link) : `${text.trim()}\n${link}`
 }
 
-// ---------- Pilote automatique WhatsApp (Partie 5) ----------
+// ---------- Pilote automatique (Partie 5) : WhatsApp, Messenger, Instagram ----------
 
 // Filet de sécurité déterministe : s'ajoute au jugement de l'IA, ne le remplace pas.
 const SENSITIVE_PATTERNS: Record<string, RegExp> = {
@@ -392,28 +399,80 @@ Si sa réponse montre un blocage (objection, question), traite-le d'abord et ne 
 Mets "closing_action" à "call" seulement si tu proposes effectivement l'appel.`
 }
 
-export function buildAutopilotSystem(ctx: AiContext): string {
+const CHANNEL_LABEL: Record<Channel, string> = {
+  linkedin: 'LinkedIn', x: 'X', facebook: 'Messenger (Page Facebook)', instagram: 'Instagram (message privé)', whatsapp: 'WhatsApp',
+}
+
+export const PURCHASE_PLACEHOLDER = '{{LIEN_ACHAT}}'
+export const CONTACT_PLACEHOLDER = '{{LIEN_CONTACT}}'
+
+// Vente configurée et réalisable (lien d'achat ou numéro du propriétaire présent).
+export function saleReady(sale: AiContext['sale']): 'purchase' | 'contact' | null {
+  if (!sale?.mode) return null
+  if (sale.mode === 'digital' && sale.purchase_url) return 'purchase'
+  if (sale.mode === 'physique' && sale.owner_whatsapp && sale.owner_whatsapp.replace(/\D/g, '').length >= 8) return 'contact'
+  return null
+}
+
+function saleInstructions(ctx: AiContext): string {
   const v = ctx.brand_voice ?? {}
-  const base = buildDraftSystem(ctx, 'whatsapp', 'reply')
+  const ready = saleReady(ctx.sale)
+  if (ready === 'purchase') {
+    return `
+CONCLURE LA VENTE (produit digital)
+Dès que le prospect est prêt à acheter (il demande comment acheter, commander, payer, s'inscrire, ou dit oui),
+donne-lui le lien d'achat en écrivant EXACTEMENT ${PURCHASE_PLACEHOLDER} à l'endroit du lien (n'écris aucune URL),
+avec une phrase simple sur ce qu'il obtient. Mets "closing_action" à "purchase".
+Ne donne pas le lien tant qu'il n'a pas montré d'intérêt : d'abord comprendre son besoin et répondre à ses questions.`
+  }
+  if (ready === 'contact') {
+    const owner = ctx.sale?.owner_name || v.sender_name || 'le vendeur'
+    return `
+CONCLURE LA VENTE (produit physique)
+Dès que le prospect est prêt à acheter (prix accepté, demande de commande, de livraison, de disponibilité, ou il dit oui),
+mets-le en contact avec ${owner} sur WhatsApp pour finaliser (paiement, livraison, retrait) :
+écris EXACTEMENT ${CONTACT_PLACEHOLDER} à l'endroit du lien (n'écris aucune URL ni numéro), et dis-lui que ${owner} l'attend.
+Mets "closing_action" à "contact".
+Ne transmets pas le contact tant qu'il n'a pas montré d'intérêt réel.`
+  }
+  return `
+CONCLURE LA VENTE
+Aucun lien d'achat ni contact de vente n'est configuré. Quand le prospect est prêt à acheter, demande-lui son numéro WhatsApp
+pour que ${v.sender_name ?? 'l\'équipe'} le recontacte et finalise. Ne promets aucun délai précis.`
+}
+
+export function buildAutopilotSystem(ctx: AiContext, channel: Channel = ctx.conversation?.channel ?? 'whatsapp'): string {
+  const v = ctx.brand_voice ?? {}
+  const p = ctx.product
+  const base = buildDraftSystem(ctx, channel, 'reply')
     .replace(/Propose \d+ variantes[^\n]*\n/, '')
     .replace(/Réponds UNIQUEMENT en JSON :[\s\S]*$/, '')
+  // Avec une vente configurée, l'appel est remplacé par le lien d'achat / le contact.
+  const closing = saleReady(ctx.sale) && ctx.closing?.next_action === 'propose_call' ? '' : closingInstructions(ctx)
   return `${base}
-MODE AUTONOME
-Tu réponds seul, en direct, sur WhatsApp. Écris UNE seule réponse, la meilleure.
-Objectif : aider sincèrement et faire avancer vers l'étape suivante (comprendre le besoin, répondre, proposer la présentation quand le prospect est prêt).
+MODE AGENT COMMERCIAL AUTONOME
+Tu es l'agent commercial de ${v.sender_name ?? 'l\'entreprise'} et tu réponds seul, en direct, sur ${CHANNEL_LABEL[channel]}. Écris UNE seule réponse, la meilleure.
+${p ? `Tu vends « ${p.name} ». Tu connais ce produit par cœur grâce à la description et aux CONNAISSANCES PRODUIT : c'est TOI qui le présentes.
+- Si le prospect ne sait pas de quoi il s'agit, dit juste « bonjour », « info », « intéressé » ou réagit à une publication : présente le produit en 1 ou 2 phrases (ce que c'est, le bénéfice principal), puis pose UNE question sur son besoin.
+- Ne demande jamais au prospect de quel produit il parle.` : 'Aucun produit n\'est renseigné : réponds poliment et passe la main (escalate = true).'}
+Objectif : comprendre le besoin, répondre aux questions et objections, puis conclure la vente quand le prospect est chaud.
+Tu peux donner un prix ou une condition s'ils figurent dans les CONNAISSANCES PRODUIT ; n'invente jamais un prix, une remise ou un délai.
 Passe la main à ${v.sender_name ?? 'l\'utilisateur'} (escalate = true) si :
 - le prospect demande à parler à un humain, se plaint ou est mécontent ;
 - la réponse exige une information absente des CONNAISSANCES PRODUIT ;
-- il s'agit d'un cas particulier (réclamation, litige, commande spéciale, urgence).
+- il s'agit d'un cas particulier (réclamation, litige, commande spéciale, négociation de prix, urgence).
 Dans ce cas, écris quand même une courte réponse d'attente (« je vérifie avec ${v.sender_name ?? 'l\'équipe'} et je reviens vers vous »).
-${closingInstructions(ctx)}
+${closing}
+${saleInstructions(ctx)}
 
 Réponds UNIQUEMENT en JSON :
 {"text": "", "language": "fr", "formality": "vous", "sensitive": {"is": false, "topics": []}, "escalate": {"is": false, "reason": ""}, "closing_action": null}`
 }
 
+export type ClosingAction = 'presentation' | 'call' | 'purchase' | 'contact' | null
+
 export interface AutopilotReply {
-  closing_action: 'presentation' | 'call' | null
+  closing_action: ClosingAction
   text: string
   sensitive: boolean
   topics: string[]
@@ -421,36 +480,79 @@ export interface AutopilotReply {
   reason: string | null
 }
 
-export function normalizeAutopilot(raw: Record<string, unknown>, lastInbound: string): AutopilotReply {
-  const max = draftFormat('whatsapp', 'reply').max
+const CLOSING_ACTIONS = ['presentation', 'call', 'purchase', 'contact']
+
+// Montants (≥ 3 chiffres) cités dans un texte, chiffres seuls.
+function amounts(text: string): string[] {
+  return (text.match(/\d[\d\s.,]*\d|\d{3,}/g) ?? []).map((a) => a.replace(/\D/g, '')).filter((a) => a.length >= 3)
+}
+
+// Pour un agent de vente, parler du prix ou du paiement est normal : ces sujets ne bloquent
+// la réponse que si un montant cité n'est pas dans les connaissances (prix inventé).
+export function salesTopics(topics: string[], text: string, knowledge: string | null | undefined): string[] {
+  const known = (knowledge ?? '').replace(/[\s.,]/g, '')
+  const invented = amounts(text).some((a) => !known.includes(a))
+  return topics.filter((t) => (t === 'prix' || t === 'paiement') ? invented : true)
+}
+
+export function normalizeAutopilot(
+  raw: Record<string, unknown>, lastInbound: string, channel: Channel = 'whatsapp', knowledge?: string | null,
+): AutopilotReply {
+  const max = draftFormat(channel, 'reply').max
   let text = String(raw.text ?? '').trim()
   if (text.length > max) {
     const cut = text.slice(0, max)
     const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '))
     text = end > max * 0.5 ? cut.slice(0, end + 1) : cut.slice(0, max - 1).trimEnd() + '…'
   }
-  const s = (raw.sensitive ?? {}) as { is?: unknown; topics?: unknown }
   const e = (raw.escalate ?? {}) as { is?: unknown; reason?: unknown }
-  const topics = [...new Set([
-    ...(Array.isArray(s.topics) ? s.topics.map(String) : []),
-    ...detectSensitive(text),
-    ...detectSensitive(lastInbound),
-  ])]
+  const s = (raw.sensitive ?? {}) as { topics?: unknown }
+  const declared = (Array.isArray(s.topics) ? s.topics.map(String) : [])
+    .map((t) => t.toLowerCase())
+    .map((t) => /prix|tarif|price|co[uû]t/.test(t) ? 'prix' : /paie|pay/.test(t) ? 'paiement' : t)
+  const topics = salesTopics([...new Set([...declared, ...detectSensitive(text), ...detectSensitive(lastInbound)])], text, knowledge)
   return {
-    closing_action: raw.closing_action === 'presentation' || raw.closing_action === 'call' ? raw.closing_action : null,
+    closing_action: CLOSING_ACTIONS.includes(String(raw.closing_action)) ? raw.closing_action as ClosingAction : null,
     text,
-    sensitive: s.is === true || topics.length > 0,
+    sensitive: topics.length > 0,
     topics,
     escalate: e.is === true || !text,
     reason: e.is === true ? String(e.reason ?? 'demande de l\'IA') : !text ? 'réponse vide' : null,
   }
 }
 
+// Lien WhatsApp vers le propriétaire, message pré-rempli pour qu'il sache d'où vient le client.
+export function ownerContactLink(sale: AiContext['sale'], productName?: string, prospectName?: string | null): string | null {
+  const digits = (sale?.owner_whatsapp ?? '').replace(/\D/g, '')
+  if (digits.length < 8) return null
+  const phone = digits.length === 9 && /^[62]/.test(digits) ? `237${digits}` : digits
+  const text = `Bonjour${sale?.owner_name ? ` ${sale.owner_name}` : ''}, je suis ${prospectName || 'intéressé(e)'} et je souhaite commander${productName ? ` « ${productName} »` : ''}.`
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+}
+
+// Insère le lien d'achat ou de contact ; la vente n'est « conclue » que si le lien figure dans le message.
+export function applySaleLinks(
+  text: string, ctx: AiContext, action: ClosingAction,
+): { text: string; step: 'purchase_link_sent' | 'owner_contact_sent' | null } {
+  const ready = saleReady(ctx.sale)
+  const link = ready === 'purchase' ? ctx.sale!.purchase_url!
+    : ready === 'contact' ? ownerContactLink(ctx.sale, ctx.product?.name, ctx.prospect?.full_name) : null
+  let out = text
+  const placeholder = ready === 'purchase' ? PURCHASE_PLACEHOLDER : CONTACT_PLACEHOLDER
+  if (link) {
+    if (out.includes(placeholder)) out = out.split(placeholder).join(link)
+    else if (action === ready) out = `${out.trim()}\n${link}`
+  }
+  out = out.split(PURCHASE_PLACEHOLDER).join('').split(CONTACT_PLACEHOLDER).join('').trim()
+  const step = link && out.includes(link) ? (ready === 'purchase' ? 'purchase_link_sent' : 'owner_contact_sent') : null
+  return { text: out, step }
+}
+
 // Insère les vrais liens et détermine l'étape de closing réellement franchie.
 export function applyClosingLinks(
   text: string,
   closing: AiContext['closing'],
-  action: AutopilotReply['closing_action'],
+  action: ClosingAction,
 ): { text: string; step: 'presentation_sent' | 'call_proposed' | null } {
   if (!closing?.next_action) {
     return { text: text.split(PRESENTATION_PLACEHOLDER).join('').split(BOOKING_PLACEHOLDER).join('').trim(), step: null }
@@ -486,4 +588,68 @@ export const DEFAULT_FOLLOWUP_TEMPLATES: { purpose: 'followup_1' | 'followup_2';
 
 export function templateName(purpose: string, language: string): string {
   return `numera_${purpose.replace('followup_', 'relance_')}_${language}`
+}
+
+// ---------- Publications Facebook / Instagram ----------
+
+export interface PostDraft { channel: 'facebook' | 'instagram'; body: string; angle: string; image_idea: string }
+
+export function buildPostsSystem(ctx: Pick<AiContext, 'brand_voice' | 'product'>, channels: ('facebook' | 'instagram')[], count: number): string {
+  const v = ctx.brand_voice ?? {}
+  return `Tu es le community manager de ${v.sender_name ?? 'l\'entreprise'}. Tu écris des publications qui attirent des clients pour « ${ctx.product?.name ?? 'le produit'} ».
+But : provoquer des commentaires et des messages privés. Un agent IA répond ensuite en privé à chaque commentaire et conclut la vente.
+
+RÈGLES
+- ${count} publication(s) par réseau parmi : ${channels.join(', ')}. Chaque publication a un angle différent (problème/solution, témoignage type, question, bénéfice, offre, coulisses).
+- Accroche forte dans la première ligne, phrases courtes, langage simple, ton : ${ctx.product?.tone ?? 'chaleureux et direct'}.
+- N'affirme que ce qui figure dans la description et les CONNAISSANCES PRODUIT. Un prix uniquement s'il y figure. Aucun faux témoignage nominatif, aucune promesse de résultat chiffrée.
+- Termine par un appel à l'action qui pousse à COMMENTER ou à écrire en privé (ex. « Commentez INFO et on vous écrit en privé »).
+- Aucun lien dans le texte.
+- facebook : 300 à 900 caractères, 0 à 3 émojis, 0 à 2 hashtags.
+- instagram : légende de 300 à 1500 caractères, émojis bienvenus, 5 à 10 hashtags pertinents à la fin.
+- image_idea : description courte du visuel idéal (Instagram exige une image).
+- Langue : ${ctx.product ? 'celle de la cible du produit (français par défaut)' : 'français'}. ${v.formality === 'tu' ? 'Tutoiement.' : 'Vouvoiement.'}
+
+Réponds UNIQUEMENT en JSON :
+{"posts": [{"channel": "facebook", "body": "", "angle": "", "image_idea": ""}]}`
+}
+
+export function buildPostsUser(ctx: Pick<AiContext, 'product'>, brief?: string): string {
+  const p = ctx.product
+  return JSON.stringify({
+    produit: p && { nom: p.name, description: p.description, cible: p.target, accroches: p.hooks ?? [], segments: p.segments ?? [] },
+    'CONNAISSANCES PRODUIT': p?.knowledge || p?.description || '',
+    consigne_utilisateur: brief || null,
+  })
+}
+
+export function normalizePosts(raw: Record<string, unknown>, channels: ('facebook' | 'instagram')[]): PostDraft[] {
+  const max = { facebook: 2000, instagram: 2200 }
+  return (Array.isArray(raw.posts) ? raw.posts : [])
+    .map((p: Record<string, unknown>) => ({
+      channel: p?.channel === 'instagram' ? 'instagram' as const : 'facebook' as const,
+      body: String(p?.body ?? '').trim(),
+      angle: String(p?.angle ?? '').slice(0, 120),
+      image_idea: String(p?.image_idea ?? '').slice(0, 300),
+    }))
+    .filter((p) => p.body && channels.includes(p.channel))
+    .map((p) => ({ ...p, body: p.body.slice(0, max[p.channel]) }))
+    .slice(0, 12)
+}
+
+// ---------- Réponse privée à un commentaire ----------
+
+export function buildCommentSystem(ctx: AiContext, channel: Channel): string {
+  const auto = buildAutopilotSystem(ctx, channel).replace(/Réponds UNIQUEMENT en JSON :[\s\S]*$/, '')
+  return `${auto}
+PREMIER MESSAGE APRÈS UN COMMENTAIRE
+Le prospect vient de commenter une publication (texte fourni). Tu lui écris en PRIVÉ pour la première fois :
+- remercie-le en reprenant son commentaire en quelques mots ;
+- s'il pose une question, réponds-y avec les CONNAISSANCES PRODUIT ; sinon présente le produit en 1 ou 2 phrases ;
+- termine par UNE question simple sur son besoin. Pas de lien d'achat dans ce premier message, sauf s'il demande explicitement comment acheter.
+- public_reply : courte réponse publique sous son commentaire (ex. « Merci ! Je vous ai écrit en privé 📩 »), sans prix ni lien.
+- Si le commentaire est négatif, une insulte ou du spam : "skip" à true (aucune réponse).
+
+Réponds UNIQUEMENT en JSON :
+{"text": "", "public_reply": "", "skip": false, "language": "fr", "sensitive": {"is": false, "topics": []}, "escalate": {"is": false, "reason": ""}, "closing_action": null}`
 }
