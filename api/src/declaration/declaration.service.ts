@@ -11,15 +11,23 @@ import {
   InvoiceDirection,
   InvoiceStatus,
   InvoiceType,
+  TaxRegime,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RequestContext } from '../auth/request-context';
-import { computeDeclaration } from '../tax/vat-calculator';
+import { computeDeclaration, roundToFranc } from '../tax/vat-calculator';
+import { nonDeductibleReasons, serviceVatForPeriod } from '../tax/exigibility';
+import {
+  CREDIT_VALIDATION_MONTHS,
+  TAXABLE_BASE_ROUNDING,
+  VAT_RATES_BP,
+} from '../tax/tax.constants';
 import {
   daysUntilDue,
   estimateLatePenalty,
+  monthsLate,
   formatPeriod,
   previousPeriod,
   urgencyLevel,
@@ -82,10 +90,10 @@ export class DeclarationService {
       );
     }
 
-    const { invoiceIds, result, turnoverExclVat } = await this.aggregate(
-      ctx.entityId,
-      period,
-    );
+    await this.assertSubjectToVat(ctx.entityId);
+
+    const { invoiceIds, result, turnoverExclVat, vatExcluded } =
+      await this.aggregate(ctx.entityId, period);
 
     const dueDate = vatDueDate(period);
 
@@ -103,6 +111,8 @@ export class DeclarationService {
       vatCollected: result.vatCollected,
       vatDeductible: result.vatDeductible,
       vatCredit: result.vatCredit,
+      vatWithheld: result.vatWithheld,
+      vatExcluded,
       vatDue: result.vatDue,
       carryForward: result.carryForward,
       turnoverExclVat,
@@ -157,11 +167,17 @@ export class DeclarationService {
   /**
    * Agrège les opérations d'une période.
    *
-   * Toute facture VALIDÉE entre dans la période de sa date
-   * d'émission — y compris si elle a été annulée depuis : c'est
-   * alors l'avoir, daté de sa propre période, qui vient en
-   * déduction. Exclure la facture annulée ET soustraire l'avoir
-   * reviendrait à retirer deux fois le même montant.
+   * Ventes de BIENS : la TVA entre dans la période de la date
+   * d'émission (exigibilité à la livraison, CGI art. 134-1-a), y
+   * compris si la facture a été annulée depuis : c'est alors
+   * l'avoir, daté de sa propre période, qui vient en déduction.
+   *
+   * Prestations de SERVICES : la TVA entre dans la période de
+   * l'ENCAISSEMENT (art. 134-1-b), calculée par serviceVatForPeriod.
+   *
+   * Achats : la TVA est déductible dans la période de la facture,
+   * sauf exclusions (facture sans NIU, achat ≥ 100 000 FCFA payé en
+   * espèces, dépense exclue par nature), comptées à part.
    */
   private async aggregate(entityId: string, period: Period) {
     const { start, end } = this.periodBounds(period);
@@ -181,11 +197,26 @@ export class DeclarationService {
         type: true,
         vatAmount: true,
         subtotalExclVat: true,
+        totalInclVat: true,
+        partyNiu: true,
+        vatNonDeductible: true,
+        originalInvoiceId: true,
+        originalInvoice: {
+          select: {
+            partyNiu: true,
+            totalInclVat: true,
+            vatNonDeductible: true,
+            payments: { select: { method: true } },
+          },
+        },
+        lines: { select: { isService: true, lineVat: true } },
+        payments: { select: { method: true } },
       },
     });
 
     let vatCollected = 0;
     let vatDeductible = 0;
+    let vatExcluded = 0;
     let turnoverExclVat = 0;
 
     for (const invoice of invoices) {
@@ -193,12 +224,38 @@ export class DeclarationService {
       const sign = invoice.type === InvoiceType.CREDIT_NOTE ? -1 : 1;
 
       if (invoice.direction === InvoiceDirection.SALE) {
-        vatCollected += sign * invoice.vatAmount;
         turnoverExclVat += sign * invoice.subtotalExclVat;
+        // La part services d'une facture, ou d'un avoir rattaché à
+        // une facture, suit les encaissements (voir plus bas). Un
+        // avoir isolé reste imputé à sa date.
+        const servicesFollowCash =
+          invoice.type === InvoiceType.INVOICE || !!invoice.originalInvoiceId;
+        const serviceVat = servicesFollowCash
+          ? invoice.lines
+              .filter((l) => l.isService)
+              .reduce((sum, l) => sum + l.lineVat, 0)
+          : 0;
+        vatCollected += sign * (invoice.vatAmount - serviceVat);
       } else {
-        vatDeductible += sign * invoice.vatAmount;
+        // Un avoir d'achat suit le sort de la facture d'origine.
+        const source =
+          invoice.type === InvoiceType.CREDIT_NOTE && invoice.originalInvoice
+            ? invoice.originalInvoice
+            : invoice;
+        const excluded =
+          nonDeductibleReasons({
+            partyNiu: source.partyNiu,
+            totalInclVat: source.totalInclVat,
+            vatNonDeductible: source.vatNonDeductible,
+            paymentMethods: source.payments.map((p) => p.method),
+          }).length > 0;
+        if (excluded) vatExcluded += sign * invoice.vatAmount;
+        else vatDeductible += sign * invoice.vatAmount;
       }
     }
+
+    vatCollected += await this.serviceVatCollected(entityId, start, end);
+    const vatWithheld = await this.vatWithheldOn(entityId, start, end);
 
     // Report du crédit de la période précédente
     const previousCredit = await this.previousCarryForward(entityId, period);
@@ -206,6 +263,7 @@ export class DeclarationService {
     const result = computeDeclaration({
       vatCollected,
       vatDeductible,
+      vatWithheld,
       previousCredit,
     });
 
@@ -213,7 +271,92 @@ export class DeclarationService {
       invoiceIds: invoices.map((i) => i.id),
       result,
       turnoverExclVat,
+      vatExcluded: roundToFranc(vatExcluded),
     };
+  }
+
+  /**
+   * TVA sur prestations de services exigible sur la période :
+   * factures ayant reçu un règlement, ou un avoir, dans la période.
+   */
+  private async serviceVatCollected(entityId: string, start: Date, end: Date) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        entityId,
+        deletedAt: null,
+        direction: InvoiceDirection.SALE,
+        type: InvoiceType.INVOICE,
+        status: { not: InvoiceStatus.DRAFT },
+        number: { not: null },
+        lines: { some: { isService: true, lineVat: { gt: 0 } } },
+        OR: [
+          { payments: { some: { paidAt: { gte: start, lt: end } } } },
+          {
+            creditNotes: {
+              some: {
+                deletedAt: null,
+                number: { not: null },
+                issuedAt: { gte: start, lt: end },
+              },
+            },
+          },
+        ],
+      },
+      select: {
+        totalInclVat: true,
+        lines: { select: { isService: true, lineVat: true, lineInclVat: true } },
+        payments: { select: { paidAt: true, amount: true, vatWithheld: true } },
+        creditNotes: {
+          where: { deletedAt: null, number: { not: null } },
+          select: {
+            issuedAt: true,
+            lines: { select: { isService: true, lineInclVat: true } },
+          },
+        },
+      },
+    });
+
+    let total = 0;
+    for (const invoice of invoices) {
+      const services = invoice.lines.filter((l) => l.isService);
+      total += serviceVatForPeriod(
+        {
+          totalInclVat: invoice.lines.reduce((sum, l) => sum + l.lineInclVat, 0),
+          serviceInclVat: services.reduce((sum, l) => sum + l.lineInclVat, 0),
+          serviceVat: services.reduce((sum, l) => sum + l.lineVat, 0),
+          settlements: invoice.payments.map((p) => ({
+            at: p.paidAt,
+            amount: p.amount + p.vatWithheld,
+          })),
+          credits: invoice.creditNotes.map((c) => ({
+            at: c.issuedAt,
+            serviceInclVat: c.lines
+              .filter((l) => l.isService)
+              .reduce((sum, l) => sum + l.lineInclVat, 0),
+          })),
+        },
+        start,
+        end,
+      );
+    }
+    return total;
+  }
+
+  /** TVA retenue à la source par les clients sur la période (CGI art. 149-2). */
+  private async vatWithheldOn(entityId: string, start: Date, end: Date) {
+    const sum = await this.prisma.invoicePayment.aggregate({
+      where: {
+        paidAt: { gte: start, lt: end },
+        vatWithheld: { gt: 0 },
+        invoice: {
+          entityId,
+          deletedAt: null,
+          direction: InvoiceDirection.SALE,
+        },
+      },
+      _sum: { vatWithheld: true },
+    });
+    return sum._sum.vatWithheld ?? 0;
   }
 
   // ----------------------------------------------------------
@@ -253,7 +396,7 @@ export class DeclarationService {
     const { start, end } = this.periodBounds(period);
     const filed = this.isFiled(declaration.status);
 
-    const [pendingDrafts, isStale] = await Promise.all([
+    const [pendingDrafts, isStale, creditMonths, excludedPurchases] = await Promise.all([
       // Brouillons datés de la période : ils n'entrent pas dans la
       // déclaration tant qu'ils ne sont pas validés.
       this.prisma.invoice.count({
@@ -265,6 +408,8 @@ export class DeclarationService {
         },
       }),
       filed ? Promise.resolve(false) : this.isStale(ctx.entityId, declaration),
+      this.creditMonths(ctx.entityId, period),
+      this.excludedPurchases(ctx.entityId, start, end),
     ]);
 
     return {
@@ -273,10 +418,65 @@ export class DeclarationService {
       daysLeft,
       urgency: filed ? 'SAFE' : urgencyLevel(daysLeft),
       estimatedPenalty:
-        !filed && daysLeft < 0 ? estimateLatePenalty(declaration.vatDue) : 0,
+        !filed && daysLeft < 0
+          ? estimateLatePenalty(declaration.vatDue, monthsLate(declaration.dueDate))
+          : 0,
       pendingDrafts,
       isStale,
+      // Base au taux général arrondie au millier de FCFA inférieur
+      // (CGI art. 141), telle qu'à reporter sur le formulaire.
+      taxableBase: this.taxableBase(declaration.vatCollected),
+      creditMonths,
+      creditNeedsValidation: creditMonths > CREDIT_VALIDATION_MONTHS,
+      excludedPurchases,
     };
+  }
+
+  private taxableBase(vatCollected: number): number {
+    if (vatCollected <= 0) return 0;
+    const base = Math.round((vatCollected * 10_000) / VAT_RATES_BP.STANDARD);
+    return Math.floor(base / TAXABLE_BASE_ROUNDING) * TAXABLE_BASE_ROUNDING;
+  }
+
+  /** Achats de la période dont la TVA n'est pas déductible, avec la raison. */
+  private async excludedPurchases(entityId: string, start: Date, end: Date) {
+    const purchases = await this.prisma.invoice.findMany({
+      where: {
+        entityId,
+        deletedAt: null,
+        direction: InvoiceDirection.PURCHASE,
+        type: InvoiceType.INVOICE,
+        status: { not: InvoiceStatus.DRAFT },
+        number: { not: null },
+        issuedAt: { gte: start, lt: end },
+        vatAmount: { gt: 0 },
+      },
+      select: {
+        id: true,
+        number: true,
+        partyName: true,
+        partyNiu: true,
+        totalInclVat: true,
+        vatAmount: true,
+        vatNonDeductible: true,
+        payments: { select: { method: true } },
+      },
+      orderBy: { issuedAt: 'asc' },
+    });
+    return purchases
+      .map((p) => ({
+        id: p.id,
+        number: p.number,
+        partyName: p.partyName,
+        vatAmount: p.vatAmount,
+        reasons: nonDeductibleReasons({
+          partyNiu: p.partyNiu,
+          totalInclVat: p.totalInclVat,
+          vatNonDeductible: p.vatNonDeductible,
+          paymentMethods: p.payments.map((x) => x.method),
+        }),
+      }))
+      .filter((p) => p.reasons.length > 0);
   }
 
   async list(ctx: RequestContext, year?: number) {
@@ -436,6 +636,51 @@ export class DeclarationService {
   //  Privé
   // ----------------------------------------------------------
 
+  /** Seules les entreprises du régime réel déclarent la TVA (CGI art. 132). */
+  private async assertSubjectToVat(entityId: string) {
+    const entity = await this.prisma.entity.findUnique({
+      where: { id: entityId },
+      select: { taxRegime: true },
+    });
+    if (entity?.taxRegime === TaxRegime.IGS) {
+      throw new BadRequestException(
+        'Votre entreprise relève de l’impôt général synthétique (IGS) : elle n’est ' +
+          'pas soumise à la TVA et n’a pas de déclaration de TVA à déposer (CGI art. 132).',
+      );
+    }
+  }
+
+  /**
+   * Nombre de mois consécutifs, jusqu'à la période incluse, se
+   * terminant par un crédit reporté. Au-delà de 3 mois, le report
+   * d'un crédit en commerce général exige une validation préalable
+   * de l'administration (CGI art. 149-3).
+   */
+  private async creditMonths(entityId: string, period: Period) {
+    const recent = await this.prisma.taxDeclaration.findMany({
+      where: {
+        entityId,
+        deletedAt: null,
+        OR: [
+          { periodYear: { lt: period.year } },
+          { periodYear: period.year, periodMonth: { lte: period.month } },
+        ],
+      },
+      orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
+      take: 24,
+      select: { periodYear: true, periodMonth: true, carryForward: true },
+    });
+    let months = 0;
+    let expected = period;
+    for (const d of recent) {
+      if (d.periodYear !== expected.year || d.periodMonth !== expected.month) break;
+      if (d.carryForward <= 0) break;
+      months += 1;
+      expected = previousPeriod(expected);
+    }
+    return months;
+  }
+
   private async getOwned(ctx: RequestContext, id: string) {
     const declaration = await this.prisma.taxDeclaration.findFirst({
       where: { id, entityId: ctx.entityId, deletedAt: null },
@@ -488,10 +733,12 @@ export class DeclarationService {
       vatCollected: number;
       vatDeductible: number;
       vatCredit: number;
+      vatWithheld: number;
+      vatExcluded: number;
       turnoverExclVat: number;
     },
   ): Promise<boolean> {
-    const { result, turnoverExclVat } = await this.aggregate(entityId, {
+    const { result, turnoverExclVat, vatExcluded } = await this.aggregate(entityId, {
       year: declaration.periodYear,
       month: declaration.periodMonth,
     });
@@ -499,6 +746,8 @@ export class DeclarationService {
       result.vatCollected !== declaration.vatCollected ||
       result.vatDeductible !== declaration.vatDeductible ||
       result.vatCredit !== declaration.vatCredit ||
+      result.vatWithheld !== declaration.vatWithheld ||
+      vatExcluded !== declaration.vatExcluded ||
       turnoverExclVat !== declaration.turnoverExclVat
     );
   }

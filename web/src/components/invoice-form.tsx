@@ -4,7 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { api, type Paginated, type Party, type Product } from '@/lib/api';
+import {
+  api,
+  type EntitySummary,
+  type Paginated,
+  type Party,
+  type Product,
+} from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { computeTotals, type LineInput, type VatRateKey } from '@/lib/vat';
 import {
   amountToInput,
@@ -37,6 +44,7 @@ export interface EditableInvoice {
   customerId: string | null;
   supplierId: string | null;
   supplierReference: string | null;
+  vatNonDeductible?: boolean;
   notes: string | null;
   terms: string | null;
   lines: Array<{
@@ -47,6 +55,7 @@ export interface EditableInvoice {
     unitPrice: number;
     discountPct: number;
     vatRate: VatRateKey;
+    isService?: boolean;
   }>;
 }
 
@@ -54,6 +63,8 @@ interface DraftLine extends LineInput {
   key: string;
   label: string;
   productId?: string;
+  /** Prestation de services : TVA exigible à l'encaissement (CGI art. 134). */
+  isService: boolean;
   /** Saisies brutes : on ne reformate pas pendant la frappe. */
   rawQuantity: string;
   rawUnitPrice: string;
@@ -63,13 +74,14 @@ interface DraftLine extends LineInput {
 let lineCounter = 0;
 const newKey = () => `l${Date.now().toString(36)}${lineCounter++}`;
 
-const emptyLine = (): DraftLine => ({
+const emptyLine = (vatRate: VatRateKey = 'STANDARD'): DraftLine => ({
   key: newKey(),
   label: '',
+  isService: false,
   quantity: 1000,
   unitPrice: 0,
   discountPct: 0,
-  vatRate: 'STANDARD',
+  vatRate,
   rawQuantity: '1',
   rawUnitPrice: '',
   rawDiscount: '',
@@ -102,8 +114,15 @@ export function InvoiceForm({
   canValidate: boolean;
 }) {
   const router = useRouter();
+  const { current } = useAuth();
   const isSale = direction === 'SALE';
   const isEdit = !!invoice;
+  const [entity, setEntity] = useState<EntitySummary | null>(null);
+  // Entreprise à l'IGS : pas de TVA sur ses ventes (CGI art. 132).
+  const isIgs = isSale && entity?.taxRegime === 'IGS';
+  const [vatNonDeductible, setVatNonDeductible] = useState(
+    invoice?.vatNonDeductible ?? false,
+  );
 
   const [parties, setParties] = useState<Party[] | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -131,6 +150,7 @@ export function InvoiceForm({
           unitPrice: line.unitPrice,
           discountPct: line.discountPct,
           vatRate: line.vatRate,
+          isService: !!line.isService,
           rawQuantity: formatQuantity(line.quantity),
           rawUnitPrice: amountToInput(line.unitPrice),
           rawDiscount: line.discountPct ? String(line.discountPct / 100).replace('.', ',') : '',
@@ -159,6 +179,24 @@ export function InvoiceForm({
     })();
   }, [entityId, isSale]);
 
+  useEffect(() => {
+    if (!current?.organizationId) return;
+    api
+      .get<EntitySummary>(`/organizations/${current.organizationId}/entities/${entityId}`)
+      .then((data) => {
+        setEntity(data);
+        // Nouvelle vente d'une entreprise à l'IGS : lignes sans TVA.
+        if (isSale && !invoice && data.taxRegime === 'IGS') {
+          setLines((prev) =>
+            prev.map((line) =>
+              line.vatRate === 'STANDARD' ? { ...line, vatRate: 'EXEMPT' } : line,
+            ),
+          );
+        }
+      })
+      .catch(() => setEntity(null));
+  }, [current?.organizationId, entityId, isSale, invoice]);
+
   const totals = useMemo(() => computeTotals(lines), [lines]);
 
   const selectedParty = parties?.find((p) => p.id === partyId);
@@ -167,6 +205,8 @@ export function InvoiceForm({
   // normalisée : on prévient ici plutôt qu'au moment de la
   // validation, où c'est trop tard.
   const missingNiu = isSale && !!selectedParty?.isVatSubject && !selectedParty.niu;
+  // Achat sans NIU du fournisseur : TVA non déductible (LPF art. L 101).
+  const supplierWithoutNiu = !isSale && !!selectedParty && !selectedParty.niu;
 
   function updateLine(key: string, patch: Partial<DraftLine>) {
     setLines((prev) =>
@@ -182,7 +222,8 @@ export function InvoiceForm({
       label: product.label,
       unitPrice: product.unitPrice,
       rawUnitPrice: amountToInput(product.unitPrice),
-      vatRate: product.vatRate,
+      vatRate: isIgs ? 'EXEMPT' : product.vatRate,
+      isService: product.isService,
     });
   }
 
@@ -222,7 +263,11 @@ export function InvoiceForm({
       ...(dueAt && { dueAt: fromDateInput(dueAt) }),
       ...(isSale
         ? { customerId: partyId }
-        : { supplierId: partyId, supplierReference: supplierReference.trim() || undefined }),
+        : {
+            supplierId: partyId,
+            supplierReference: supplierReference.trim() || undefined,
+            vatNonDeductible,
+          }),
       notes: notes.trim() || undefined,
       terms: terms.trim() || undefined,
       lines: usable.map((line) => ({
@@ -232,6 +277,7 @@ export function InvoiceForm({
         unitPrice: line.unitPrice,
         discountPct: line.discountPct ?? 0,
         vatRate: line.vatRate,
+        isService: line.isService,
       })),
     };
 
@@ -321,6 +367,21 @@ export function InvoiceForm({
             </Field>
           )}
 
+          {supplierWithoutNiu && (
+            <Alert tone="warning">
+              Ce fournisseur n’a pas de NIU : la TVA de cette facture ne sera pas
+              déductible (LPF art. L 101). Ajoutez son NIU sur sa fiche s’il figure
+              sur la facture.
+            </Alert>
+          )}
+
+          {isIgs && (
+            <Alert tone="info">
+              Votre entreprise relève de l’impôt général synthétique (IGS) : elle ne
+              facture pas de TVA (CGI art. 132). Laissez les lignes en « Exonéré ».
+            </Alert>
+          )}
+
           {missingNiu && (
             <Alert tone="warning">
               Ce client est assujetti à la TVA mais n’a pas de NIU. La
@@ -355,6 +416,28 @@ export function InvoiceForm({
               </Field>
             )}
           </div>
+
+          {!isSale && (
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={vatNonDeductible}
+                  onChange={(e) => setVatNonDeductible(e.target.checked)}
+                />
+                <span>
+                  TVA non déductible : hébergement, restauration, réception,
+                  spectacle, location de véhicule de tourisme (CGI art. 144)
+                </span>
+              </label>
+              <p className="text-xs text-inksoft">
+                Un achat de 100 000 FCFA ou plus réglé en espèces perd aussi son
+                droit à déduction (CGI art. 143). Préférez un virement ou le Mobile
+                Money.
+              </p>
+            </div>
+          )}
         </div>
       </Panel>
 
@@ -364,12 +447,19 @@ export function InvoiceForm({
           <Button
             variant="ghost"
             className="h-8 px-3"
-            onClick={() => setLines((prev) => [...prev, emptyLine()])}
+            onClick={() =>
+              setLines((prev) => [...prev, emptyLine(isIgs ? 'EXEMPT' : 'STANDARD')])
+            }
           >
             Ajouter une ligne
           </Button>
         }
       >
+        <p className="px-4 pt-3 text-xs text-inksoft">
+          Nature : pour un <strong>service</strong>, la TVA est déclarée le mois où
+          vous êtes payé ; pour un <strong>bien</strong>, le mois de la facture (CGI
+          art. 134).
+        </p>
         <ul className="divide-y divide-line">
           {lines.map((line, index) => {
             const result = totals.lines[index];
@@ -416,7 +506,19 @@ export function InvoiceForm({
                   </Select>
                 )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                  <Field label="Nature">
+                    <Select
+                      value={line.isService ? 'SERVICE' : 'GOODS'}
+                      onChange={(e) =>
+                        updateLine(line.key, { isService: e.target.value === 'SERVICE' })
+                      }
+                    >
+                      <option value="GOODS">Bien</option>
+                      <option value="SERVICE">Service</option>
+                    </Select>
+                  </Field>
+
                   <Field label="Quantité">
                     <Input
                       inputMode="decimal"

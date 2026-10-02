@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { DeclarationStatus, OrganizationType } from '@prisma/client';
+import { DeclarationStatus, OrganizationType, TaxRegime } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import {
   daysUntilDue,
   estimateLatePenalty,
+  monthsLate,
   formatPeriod,
   urgencyLevel,
   vatDueDate,
@@ -61,6 +62,8 @@ export class DashboardService {
         organizationId,
         isActive: true,
         deletedAt: null,
+        // Les dossiers à l'IGS n'ont pas de TVA (CGI art. 132).
+        taxRegime: { not: TaxRegime.IGS },
         ...(restrictedIds?.length && { id: { in: restrictedIds } }),
       },
       select: {
@@ -150,7 +153,7 @@ export class DashboardService {
       daysLeft,
       urgency: urgencyLevel(daysLeft),
       estimatedPenalties: late.reduce(
-        (sum, r) => sum + estimateLatePenalty(r.vatDue),
+        (sum, r) => sum + estimateLatePenalty(r.vatDue, monthsLate(dueDate)),
         0,
       ),
       summary: {
@@ -183,7 +186,11 @@ export class DashboardService {
     const dueDate = vatDueDate(target);
     const daysLeft = daysUntilDue(dueDate);
 
-    const [declaration, drafts, unpaid, recent] = await Promise.all([
+    const [entity, declaration, drafts, unpaid, recent] = await Promise.all([
+      this.prisma.entity.findUnique({
+        where: { id: entityId },
+        select: { taxRegime: true },
+      }),
       this.prisma.taxDeclaration.findFirst({
         where: {
           entityId,
@@ -253,6 +260,8 @@ export class DashboardService {
     return {
       period: target,
       periodLabel: formatPeriod(target),
+      // Entreprise à l'IGS : pas de TVA ni de déclaration (CGI art. 132).
+      vatApplicable: entity?.taxRegime !== TaxRegime.IGS,
       nextDeadline: {
         label: `Déclaration TVA ${formatPeriod(target)}`,
         dueDate,

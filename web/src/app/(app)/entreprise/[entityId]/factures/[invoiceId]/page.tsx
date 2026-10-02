@@ -51,7 +51,7 @@ interface InvoiceDetail {
   balanceDue: number;
   notes: string | null;
   terms: string | null;
-  customer?: { name: string; niu: string | null } | null;
+  customer?: { name: string; niu: string | null; withholdsVat?: boolean } | null;
   supplier?: { name: string; niu: string | null } | null;
   originalInvoice: { id: string; number: string | null } | null;
   lines: Array<{
@@ -70,6 +70,7 @@ interface InvoiceDetail {
     method: string;
     paidAt: string;
     reference: string | null;
+    vatWithheld?: number;
   }>;
   creditNotes: Array<{ id: string; number: string; totalInclVat: number }>;
 }
@@ -205,6 +206,15 @@ function InvoiceDetailView() {
         </Alert>
       )}
 
+      {/* Mentions obligatoires (CGI art. 150) et droit à déduction (LPF L 101) */}
+      {!isCancelled && !(invoice.partyNiu ?? party?.niu) && (
+        <Alert tone="warning">
+          {isSale
+            ? 'Le NIU du client n’apparaît pas sur cette facture. Il fait partie des mentions obligatoires (CGI art. 150) : s’il en a un, ajoutez-le sur sa fiche avant de valider. Une facture incomplète est passible d’une amende (LPF art. L 102).'
+            : 'Cette facture d’achat ne porte pas le NIU du fournisseur : sa TVA n’est pas déductible (LPF art. L 101).'}
+        </Alert>
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
         {isDraft && (
@@ -334,6 +344,11 @@ function InvoiceDetailView() {
                 </span>
                 <span className="tabular font-medium shrink-0">
                   {formatMoney(payment.amount)}
+                  {!!payment.vatWithheld && (
+                    <span className="block text-xs text-inksoft">
+                      + TVA retenue {formatMoney(payment.vatWithheld)}
+                    </span>
+                  )}
                 </span>
               </li>
             ))}
@@ -410,6 +425,15 @@ function InvoiceDetailView() {
       {dialog === 'payment' && (
         <PaymentDialog
           remaining={invoice.balanceDue}
+          withholdableVat={
+            isSale && invoice.customer?.withholdsVat
+              ? Math.max(
+                  0,
+                  invoice.vatAmount -
+                    invoice.payments.reduce((sum, p) => sum + (p.vatWithheld ?? 0), 0),
+                )
+              : 0
+          }
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(body) => run(() => api.post(`${base}/payments`, body))}
@@ -458,32 +482,56 @@ function Line({ label, value }: { label: string; value: number }) {
 
 function PaymentDialog({
   remaining,
+  withholdableVat,
   busy,
   onClose,
   onSubmit,
 }: {
   remaining: number;
+  /** TVA encore retenable à la source par ce client (CGI art. 149-2). */
+  withholdableVat: number;
   busy: boolean;
   onClose: () => void;
   onSubmit: (body: unknown) => void;
 }) {
-  const [raw, setRaw] = useState(amountToInput(remaining));
+  const defaultWithheld = Math.min(withholdableVat, remaining);
+  const [rawWithheld, setRawWithheld] = useState(
+    defaultWithheld > 0 ? amountToInput(defaultWithheld) : '',
+  );
+  const [raw, setRaw] = useState(amountToInput(remaining - defaultWithheld));
   const [method, setMethod] = useState('MOBILE_MONEY_MTN');
   const [reference, setReference] = useState('');
   const [paidAt, setPaidAt] = useState(toDateInput(new Date()));
 
   const amount = parseAmount(raw);
-  const invalid = amount <= 0 || amount > remaining;
+  const vatWithheld = withholdableVat > 0 ? parseAmount(rawWithheld) : 0;
+  const tooMuch = amount + vatWithheld > remaining;
+  const invalid =
+    amount <= 0 || tooMuch || vatWithheld > withholdableVat;
 
   return (
     <Modal title="Enregistrer un règlement" onClose={onClose}>
       <Field
         label="Montant reçu (FCFA)"
         hint={`Reste dû : ${formatMoney(remaining)}`}
-        error={amount > remaining ? 'Supérieur au reste dû' : undefined}
+        error={tooMuch ? 'Supérieur au reste dû' : undefined}
       >
         <Input inputMode="numeric" value={raw} onChange={(e) => setRaw(e.target.value)} />
       </Field>
+
+      {withholdableVat > 0 && (
+        <Field
+          label="TVA retenue à la source par le client (FCFA)"
+          hint="Ce client reverse lui-même la TVA aux impôts (CGI art. 149-2). Gardez son attestation : elle vous permet de déduire ce montant."
+          error={vatWithheld > withholdableVat ? 'Supérieure à la TVA de la facture' : undefined}
+        >
+          <Input
+            inputMode="numeric"
+            value={rawWithheld}
+            onChange={(e) => setRawWithheld(e.target.value)}
+          />
+        </Field>
+      )}
 
       <Field label="Moyen de paiement">
         <Select value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -516,6 +564,7 @@ function PaymentDialog({
           onClick={() =>
             onSubmit({
               amount,
+              ...(vatWithheld > 0 && { vatWithheld }),
               method,
               reference: reference.trim() || undefined,
               paidAt: fromDateInput(paidAt),

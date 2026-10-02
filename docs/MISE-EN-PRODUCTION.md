@@ -24,7 +24,7 @@
 
 | # | Action | Pourquoi |
 |---|---|---|
-| 1 | Faire valider les règles fiscales par un expert-comptable : arrondi DGI, report de crédit de TVA, échéance du 15 un jour non ouvré, format de la facture normalisée (cachet, QR code). Vérifier auprès de la DGI si les logiciels de facturation doivent être homologués. | Une erreur de calcul coûterait des pénalités à vos clients. Les règles sont regroupées dans `api/src/tax/tax.constants.ts`. |
+| 1 | Règles fiscales alignées sur le CGI 2026 (voir docs/CGI-2026.md). Reste : faire relire par un expert-comptable, et demander à la DGI comment raccorder Numera au système de facturation électronique (CGI art. 143), condition de déductibilité de la TVA chez vos clients. | Une erreur de calcul coûterait des pénalités à vos clients. Les règles sont regroupées dans `api/src/tax/tax.constants.ts`. |
 | 2 | Passer le compte Vercel à l'offre **Pro** (environ 20 $/mois). | L'offre gratuite (Hobby) est réservée à un usage non commercial. |
 | 3 | Renseigner vos informations légales dans Vercel, projet **numera**, puis **Settings → Environment Variables** : `NEXT_PUBLIC_COMPANY_LEGAL_NAME`, `NEXT_PUBLIC_COMPANY_LEGAL_FORM`, `NEXT_PUBLIC_COMPANY_REGISTRATION` (RCCM ou NIU), `NEXT_PUBLIC_COMPANY_ADDRESS`, `NEXT_PUBLIC_COMPANY_PUBLISHER`. Redéployer ensuite le site. | Obligatoire sur les pages Mentions légales et CGV ; demandé par les prestataires de paiement. |
 | 4 | Acheter un nom de domaine (par exemple `numera.cm`) et le relier au projet **numera** dans Vercel. | Confiance des clients ; e-mails envoyés depuis une adresse professionnelle, moins souvent classés en indésirables. |

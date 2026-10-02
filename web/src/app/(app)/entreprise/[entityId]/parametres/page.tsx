@@ -195,7 +195,7 @@ export default function EntitySettingsPage() {
           {text('tradeName', 'Nom commercial', 'Facultatif')}
           <div className="grid sm:grid-cols-2 gap-4">
             {text('niu', 'NIU', 'Non modifiable après la première facture', 30)}
-            {text('rccm', 'RCCM', 'Facultatif', 50)}
+            {text('rccm', 'RCCM', 'Mention obligatoire sur vos factures (CGI art. 150)', 50)}
           </div>
           <Field label="Forme juridique">
             <Select

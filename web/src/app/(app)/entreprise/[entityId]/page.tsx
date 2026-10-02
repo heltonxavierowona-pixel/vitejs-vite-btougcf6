@@ -75,30 +75,39 @@ export default function EntityDashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-4xl mx-auto">
-      <DeadlineCounter
-        periodLabel={data.periodLabel}
-        dueDate={nextDeadline.dueDate}
-        daysLeft={nextDeadline.daysLeft}
-        urgency={nextDeadline.urgency}
-        vatDue={nextDeadline.vatDue}
-        status={nextDeadline.status}
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <Link
-            href={`/entreprise/${entityId}/declarations/${data.period.year}/${data.period.month}`}
-          >
-            <Button variant={declarationDone ? 'secondary' : 'primary'}>
-              {declarationDone
-                ? 'Voir la déclaration'
-                : 'Préparer la déclaration'}
-            </Button>
-          </Link>
-          <span className="text-sm text-inksoft">
-            {declarationStatusLabel[nextDeadline.status] ??
-              nextDeadline.status}
-          </span>
-        </div>
-      </DeadlineCounter>
+      {data.vatApplicable ? (
+        <DeadlineCounter
+          periodLabel={data.periodLabel}
+          dueDate={nextDeadline.dueDate}
+          daysLeft={nextDeadline.daysLeft}
+          urgency={nextDeadline.urgency}
+          vatDue={nextDeadline.vatDue}
+          status={nextDeadline.status}
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={`/entreprise/${entityId}/declarations/${data.period.year}/${data.period.month}`}
+            >
+              <Button variant={declarationDone ? 'secondary' : 'primary'}>
+                {declarationDone
+                  ? 'Voir la déclaration'
+                  : 'Préparer la déclaration'}
+              </Button>
+            </Link>
+            <span className="text-sm text-inksoft">
+              {declarationStatusLabel[nextDeadline.status] ??
+                nextDeadline.status}
+            </span>
+          </div>
+        </DeadlineCounter>
+      ) : (
+        <Alert tone="info">
+          Votre entreprise relève de l’impôt général synthétique (IGS) : elle ne
+          facture pas de TVA et n’a pas de déclaration de TVA mensuelle (CGI art.
+          132). Si votre chiffre d’affaires vous fait passer au régime du réel,
+          modifiez le régime dans les paramètres.
+        </Alert>
+      )}
 
       {/* Blocage le plus fréquent : un brouillon n'existe pas
           fiscalement tant qu'il n'est pas validé. */}

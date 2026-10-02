@@ -52,7 +52,7 @@ s,cust=call('POST',f'/entities/{ent}/customers',{'name':'Brasseries du Littoral'
 check('client créé', s==201, cust)
 s,r=call('POST',f'/entities/{ent}/customers',{'name':'Sans NIU','isVatSubject':True},tok)
 check('client assujetti sans NIU refusé', s==400, r)
-s,sup=call('POST',f'/entities/{ent}/suppliers',{'name':'Fournitures Pro'},tok)
+s,sup=call('POST',f'/entities/{ent}/suppliers',{'name':'Fournitures Pro','niu':'M011122233344B'},tok)
 check('fournisseur créé', s==201, sup)
 
 AUG=day(10)

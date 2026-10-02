@@ -13,6 +13,7 @@ import {
   InvoiceType,
   PlanCode,
   Prisma,
+  TaxRegime,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -190,6 +191,8 @@ export class InvoiceService {
           dto.direction === InvoiceDirection.PURCHASE
             ? dto.supplierReference || null
             : null,
+        vatNonDeductible:
+          dto.direction === InvoiceDirection.PURCHASE && !!dto.vatNonDeductible,
         subtotalExclVat: totals.subtotalExclVat,
         vatAmount: totals.vatAmount,
         totalInclVat: totals.totalInclVat,
@@ -256,6 +259,7 @@ export class InvoiceService {
           customerId: isSale ? dto.customerId : null,
           supplierId: isSale ? null : dto.supplierId,
           supplierReference: isSale ? null : dto.supplierReference || null,
+          vatNonDeductible: !isSale && !!dto.vatNonDeductible,
           subtotalExclVat: totals.subtotalExclVat,
           vatAmount: totals.vatAmount,
           totalInclVat: totals.totalInclVat,
@@ -308,6 +312,22 @@ export class InvoiceService {
       throw new BadRequestException(
         'Le NIU du client assujetti est obligatoire sur une facture normalisée.',
       );
+    }
+
+    // Seules les entreprises du régime réel sont soumises à la TVA
+    // (CGI art. 132) ; une TVA facturée à tort reste due (art. 134-2).
+    if (isSale && existing.vatAmount > 0) {
+      const entity = await this.prisma.entity.findUnique({
+        where: { id: ctx.entityId },
+        select: { taxRegime: true },
+      });
+      if (entity?.taxRegime === TaxRegime.IGS) {
+        throw new BadRequestException(
+          'Votre entreprise relève de l’impôt général synthétique (IGS) : elle ne ' +
+            'doit pas facturer de TVA (CGI art. 132). Passez les lignes en « Exonéré » ' +
+            'ou corrigez le régime fiscal dans les paramètres.',
+        );
+      }
     }
 
     await this.assertPeriodOpen(ctx.entityId, existing.issuedAt);
@@ -404,6 +424,7 @@ export class InvoiceService {
           unitPrice: l.unitPrice,
           discountPct: l.discountPct,
           vatRate: l.vatRate,
+          isService: l.isService,
         }))
       : (dto.lines ?? []);
 
@@ -546,14 +567,38 @@ export class InvoiceService {
     if (invoice.status === InvoiceStatus.CANCELLED) {
       throw new BadRequestException('Cette facture est annulée.');
     }
-    if (dto.amount > invoice.balanceDue) {
+    const vatWithheld = dto.vatWithheld ?? 0;
+    if (vatWithheld > 0) {
+      if (
+        invoice.direction !== InvoiceDirection.SALE ||
+        !invoice.customer?.withholdsVat
+      ) {
+        throw new BadRequestException(
+          'La retenue à la source ne s’applique qu’aux clients qui retiennent la TVA ' +
+            '(État, collectivités, entreprises publiques ou listées : CGI art. 149-2). ' +
+            'Cochez cette option sur la fiche du client.',
+        );
+      }
+      const alreadyWithheld = invoice.payments.reduce(
+        (sum, p) => sum + p.vatWithheld,
+        0,
+      );
+      if (alreadyWithheld + vatWithheld > invoice.vatAmount) {
+        throw new BadRequestException(
+          'La TVA retenue dépasse la TVA de la facture.',
+        );
+      }
+    }
+    // La retenue solde la facture au même titre qu'un encaissement.
+    const settledNow = dto.amount + vatWithheld;
+    if (settledNow > invoice.balanceDue) {
       throw new BadRequestException(
         `Le montant dépasse le solde restant dû (${invoice.balanceDue / 100} FCFA).`,
       );
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const paidAmount = invoice.paidAmount + dto.amount;
+      const paidAmount = invoice.paidAmount + settledNow;
       const settled = paidAmount + invoice.creditedAmount >= invoice.totalInclVat;
 
       // Verrou optimiste : un second règlement saisi en même temps
@@ -580,6 +625,7 @@ export class InvoiceService {
         data: {
           invoiceId,
           amount: dto.amount,
+          vatWithheld,
           method: dto.method,
           reference: dto.reference,
           paidAt: new Date(dto.paidAt),
@@ -632,6 +678,7 @@ export class InvoiceService {
       unitPrice: line.unitPrice,
       discountPct: line.discountPct ?? 0,
       vatRate: line.vatRate,
+      isService: !!line.isService,
       lineExclVat: totals.lines[index].exclVat,
       lineVat: totals.lines[index].vat,
       lineInclVat: totals.lines[index].inclVat,

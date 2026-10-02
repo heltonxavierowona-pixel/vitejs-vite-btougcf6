@@ -176,6 +176,7 @@ describe('computeDeclaration', () => {
       vatCollected: 100000,
       vatDeductible: 30000,
       vatCredit: 0,
+      vatWithheld: 0,
       vatDue: 70000,
       carryForward: 0,
       isNil: false,
@@ -199,6 +200,16 @@ describe('computeDeclaration', () => {
     });
     expect(result.vatDue).toBe(20000);
     expect(result.carryForward).toBe(0);
+  });
+
+  it('déduit la TVA retenue à la source par les clients (CGI art. 149-2)', () => {
+    const result = computeDeclaration({
+      vatCollected: 100000,
+      vatDeductible: 30000,
+      vatWithheld: 50000,
+    });
+    expect(result.vatDue).toBe(20000);
+    expect(result.vatWithheld).toBe(50000);
   });
 
   it('signale une déclaration néant, qui reste obligatoire', () => {

@@ -127,11 +127,12 @@ export default function CabinetDashboardPage() {
 
       {data.summary.late > 0 && data.estimatedPenalties > 0 && (
         <Alert tone="error">
-          Majorations de retard estimées sur le portefeuille :{' '}
+          Pénalités de retard estimées sur le portefeuille :{' '}
           <span className="font-semibold tabular">
             {formatMoney(data.estimatedPenalties)}
           </span>
-          . Estimation indicative (25 % de la TVA due) ; seul le calcul de la
+          . Estimation indicative (10 % de la TVA due par mois de retard, plafond
+          30 %, LPF art. L 106) ; seul le calcul de la
           DGI fait foi.
         </Alert>
       )}

@@ -297,6 +297,8 @@ export interface CabinetDashboard {
 export interface EntityDashboard {
   period: { year: number; month: number };
   periodLabel: string;
+  /** false pour une entreprise à l'IGS (CGI art. 132). */
+  vatApplicable: boolean;
   nextDeadline: {
     label: string;
     dueDate: string;
@@ -348,6 +350,8 @@ export interface Party {
   name: string;
   niu: string | null;
   isVatSubject: boolean;
+  /** Clients : retient la TVA à la source (CGI art. 149-2). */
+  withholdsVat?: boolean;
   address: string | null;
   city: string | null;
   phone: string | null;

@@ -22,7 +22,7 @@ const FEATURES = [
   },
   {
     title: 'Jamais de pénalité oubliée',
-    text: 'Compte à rebours jusqu’au 15, alerte sur les brouillons non validés et estimation des majorations de retard.',
+    text: 'Compte à rebours jusqu’au 15, alerte sur les brouillons non validés et estimation des pénalités de retard.',
   },
   {
     title: 'Avoirs et encaissements',

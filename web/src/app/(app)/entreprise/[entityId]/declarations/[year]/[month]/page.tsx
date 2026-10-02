@@ -20,6 +20,12 @@ import {
 } from '@/lib/format';
 import { Alert, Button, Field, Input, Loading, Modal, Panel, errorMessage } from '@/components/ui';
 
+const exclusionLabel: Record<string, string> = {
+  NO_NIU: 'Facture sans NIU du fournisseur (LPF art. L 101)',
+  CASH: 'Payée en espèces, 100 000 FCFA ou plus (CGI art. 143)',
+  EXCLUDED_EXPENSE: 'Dépense exclue par nature (CGI art. 144)',
+};
+
 interface Declaration {
   id: string;
   type: string;
@@ -33,9 +39,21 @@ interface Declaration {
   vatCollected: number;
   vatDeductible: number;
   vatCredit: number;
+  vatWithheld: number;
+  vatExcluded: number;
   vatDue: number;
   carryForward: number;
   turnoverExclVat: number;
+  taxableBase: number;
+  creditMonths: number;
+  creditNeedsValidation: boolean;
+  excludedPurchases: Array<{
+    id: string;
+    number: string | null;
+    partyName: string | null;
+    vatAmount: number;
+    reasons: Array<'NO_NIU' | 'CASH' | 'EXCLUDED_EXPENSE'>;
+  }>;
   submittedAt: string | null;
   receiptRef: string | null;
   paidAt: string | null;
@@ -193,7 +211,7 @@ export default function DeclarationPage() {
 
       {declaration.isStale && !submitted && (
         <Alert tone="warning">
-          Des factures ont été validées ou annulées depuis le dernier calcul.{' '}
+          Des factures ou des encaissements ont changé depuis le dernier calcul.{' '}
           {editor ? 'Recalculez avant de déposer.' : 'Un comptable doit la recalculer.'}
         </Alert>
       )}
@@ -215,19 +233,22 @@ export default function DeclarationPage() {
 
       {declaration.estimatedPenalty > 0 && (
         <Alert tone="error">
-          Échéance dépassée : majoration estimée à{' '}
+          Échéance dépassée : pénalité estimée à{' '}
           <span className="font-semibold tabular">
             {formatMoney(declaration.estimatedPenalty)}
           </span>{' '}
-          (25 % de la TVA due, estimation indicative). Déposez au plus vite.
+          (10 % de la TVA due par mois de retard commencé, plafonnée à 30 % :
+          LPF art. L 106 ; estimation indicative). Déposez au plus vite.
         </Alert>
       )}
 
       {isNil && !submitted && (
         <Alert tone="warning">
           Aucune opération sur la période. La déclaration « néant » reste
-          obligatoire : son omission est sanctionnée d’une amende forfaitaire
-          de 50 000 FCFA.
+          obligatoire (CGI art. 152-5). Après mise en demeure, l’absence de
+          déclaration coûte 50 000 à 200 000 FCFA selon votre centre des impôts
+          (LPF art. L 97), et une déclaration néant ou créditrice déposée
+          seulement après mise en demeure, 1 000 000 FCFA (LPF art. L 99).
         </Alert>
       )}
 
@@ -235,11 +256,23 @@ export default function DeclarationPage() {
       <Panel title="Liquidation">
         <dl className="divide-y divide-line text-sm">
           <Row label="Chiffre d’affaires HT" value={declaration.turnoverExclVat} />
+          {declaration.taxableBase > 0 && (
+            <Row
+              label="Base imposable au taux général (arrondie au millier inférieur, CGI art. 141)"
+              value={declaration.taxableBase}
+            />
+          )}
           <Row label="TVA collectée sur ventes" value={declaration.vatCollected} />
           <Row
             label="TVA déductible sur achats"
             value={declaration.vatDeductible}
           />
+          {declaration.vatWithheld > 0 && (
+            <Row
+              label="TVA retenue à la source par vos clients (attestations à joindre)"
+              value={declaration.vatWithheld}
+            />
+          )}
           {declaration.vatCredit > 0 && (
             <Row
               label="Crédit antérieur reporté"
@@ -266,6 +299,48 @@ export default function DeclarationPage() {
           )}
         </div>
       </Panel>
+
+      <p className="text-xs text-inksoft">
+        TVA collectée : ventes de biens selon la date de facture, prestations de
+        services selon la date d’encaissement (CGI art. 134).
+      </p>
+
+      {declaration.vatExcluded > 0 && (
+        <Panel title="TVA d’achats non déductible">
+          <p className="px-4 pt-3 text-sm text-inksoft">
+            {formatMoney(declaration.vatExcluded)} de TVA payée sur vos achats ne peut
+            pas être déduite ce mois-ci.
+          </p>
+          <ul className="divide-y divide-line text-sm">
+            {declaration.excludedPurchases.map((p) => (
+              <li key={p.id} className="px-4 py-3 flex justify-between gap-3">
+                <span className="min-w-0">
+                  <Link
+                    href={`/entreprise/${entityId}/factures/${p.id}`}
+                    className="text-primary font-medium tabular"
+                  >
+                    {p.number}
+                  </Link>{' '}
+                  {p.partyName}
+                  <span className="block text-xs text-inksoft">
+                    {p.reasons.map((r) => exclusionLabel[r]).join(' · ')}
+                  </span>
+                </span>
+                <span className="tabular shrink-0">{formatMoney(p.vatAmount)}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {declaration.creditNeedsValidation && (
+        <Alert tone="warning">
+          Vous reportez un crédit de TVA depuis {declaration.creditMonths} mois. Pour
+          une activité de commerce général, un report au-delà de 3 mois n’est admis
+          qu’après validation par les services des impôts (CGI art. 149-3).
+          Rapprochez-vous de votre centre des impôts.
+        </Alert>
+      )}
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">

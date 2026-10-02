@@ -249,9 +249,9 @@ export function extractVatFromInclusive(
 // ------------------------------------------------------------
 
 /**
- * Retenue de TVA à opérer lorsqu'un assujetti règle un
- * fournisseur NON assujetti. Le montant est reversé
- * directement à la DGI par l'acheteur.
+ * Retenue de TVA à opérer par un acheteur tenu à la retenue à la
+ * source (CGI art. 149-2) sur la facture d'un fournisseur. Montant
+ * reversé directement à la DGI par l'acheteur.
  */
 export function computeWithholding(params: {
   invoiceAmount: number;
@@ -274,12 +274,15 @@ export interface DeclarationInput {
   vatDeductible: number;
   /** Crédit de TVA reporté de la période précédente (centimes). */
   previousCredit?: number;
+  /** TVA retenue à la source par les clients (CGI art. 149-2). */
+  vatWithheld?: number;
 }
 
 export interface DeclarationResult {
   vatCollected: number;
   vatDeductible: number;
   vatCredit: number;
+  vatWithheld: number;
   /** Net à payer à la DGI. Toujours >= 0. */
   vatDue: number;
   /** Crédit reportable sur la période suivante. Toujours >= 0. */
@@ -294,9 +297,10 @@ export function computeDeclaration(
   const vatCollected = input.vatCollected;
   const vatDeductible = input.vatDeductible;
   const vatCredit = input.previousCredit ?? 0;
+  const vatWithheld = input.vatWithheld ?? 0;
 
-  // TVA due = collectée − déductible − crédit antérieur
-  const net = vatCollected - vatDeductible - vatCredit;
+  // TVA due = collectée − déductible − retenue à la source − crédit antérieur
+  const net = vatCollected - vatDeductible - vatWithheld - vatCredit;
 
   const vatDue = net > 0 ? roundToFranc(net) : 0;
   const carryForward =
@@ -306,9 +310,10 @@ export function computeDeclaration(
     vatCollected: roundToFranc(vatCollected),
     vatDeductible: roundToFranc(vatDeductible),
     vatCredit: roundToFranc(vatCredit),
+    vatWithheld: roundToFranc(vatWithheld),
     vatDue,
     carryForward,
     // Une déclaration sans aucune opération reste OBLIGATOIRE.
-    isNil: vatCollected === 0 && vatDeductible === 0,
+    isNil: vatCollected === 0 && vatDeductible === 0 && vatWithheld === 0,
   };
 }

@@ -43,7 +43,7 @@ const LINE = '#d9dedb';
 const VAT_LABELS: Record<string, string> = {
   STANDARD: 'TVA 19,25 %',
   ZERO: 'Taux zéro',
-  EXEMPT: 'Exonéré',
+  EXEMPT: 'Exonérée', // mention exigée par CGI art. 150
 };
 
 const REGIME_LABELS: Record<string, string> = {
@@ -267,6 +267,14 @@ export class PdfService {
         { width: 85 * MM },
       );
     }
+    if (breakdown.some((row) => row.rate === 'STANDARD')) {
+      doc.fontSize(7.5).fillColor(SOFT).text(
+        'Taux de 19,25 % : TVA 17,5 % + centimes additionnels communaux 1,75 % (CGI art. 142).',
+        LEFT,
+        doc.y + 2,
+        { width: 85 * MM },
+      );
+    }
     const breakdownBottom = doc.y;
 
     // Totaux à droite
@@ -305,6 +313,15 @@ export class PdfService {
     }
 
     // ---- Mentions ----
+    if (!isPurchase && entity.taxRegime === 'IGS') {
+      doc.moveDown(0.8);
+      doc.fontSize(8.5).fillColor(INK).text(
+        'TVA non applicable : entreprise relevant de l’impôt général synthétique (CGI art. 132).',
+        LEFT,
+        doc.y,
+        { width: CONTENT_WIDTH },
+      );
+    }
     for (const text of [invoice.terms, invoice.notes]) {
       if (!text) continue;
       doc.moveDown(0.8);
@@ -408,6 +425,11 @@ export class PdfService {
       ['Chiffre d’affaires HT', declaration.turnoverExclVat],
       ['TVA collectée sur ventes', declaration.vatCollected],
       ['TVA déductible sur achats', declaration.vatDeductible],
+      ...(declaration.vatWithheld > 0
+        ? ([['TVA retenue à la source par les clients', declaration.vatWithheld]] as Array<
+            [string, number]
+          >)
+        : []),
       ['Crédit antérieur reporté', declaration.vatCredit],
     ];
 
@@ -582,6 +604,7 @@ export class PdfService {
     }
 
     return [...map.entries()].map(([rate, v]) => ({
+      rate,
       label: VAT_LABELS[rate] ?? rate,
       base: v.base,
       vat: v.vat,

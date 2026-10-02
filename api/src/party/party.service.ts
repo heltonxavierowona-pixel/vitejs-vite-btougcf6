@@ -171,7 +171,9 @@ export class PartyService {
     return { items, total, page, pageSize };
   }
 
-  async createSupplier(ctx: RequestContext, dto: CreatePartyDto) {
+  async createSupplier(ctx: RequestContext, input: CreatePartyDto) {
+    // La retenue à la source ne concerne que les clients.
+    const { withholdsVat: _ignored, ...dto } = input;
     const supplier = await this.prisma.supplier.create({
       data: { entityId: ctx.entityId, ...dto },
     });
@@ -193,9 +195,10 @@ export class PartyService {
     });
     if (!existing) throw new NotFoundException('Fournisseur introuvable');
 
+    const { withholdsVat: _ignored, ...data } = dto;
     const updated = await this.prisma.supplier.update({
       where: { id },
-      data: dto,
+      data,
     });
 
     await this.audit.log(ctx, AuditAction.UPDATE, 'Supplier', id, {

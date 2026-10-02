@@ -253,6 +253,9 @@ model Customer {
   name         String
   niu          String? // Obligatoire sur facture si client assujetti
   isVatSubject Boolean @default(false)
+  // Client tenu de retenir la TVA à la source (CGI art. 149-2) :
+  // État, collectivités, entreprises publiques, entreprises listées.
+  withholdsVat Boolean @default(false)
   address      String?
   city         String?
   phone        String?
@@ -374,6 +377,10 @@ model Invoice {
   partyNiu     String?
   partyAddress String?
 
+  // Achats : TVA exclue du droit à déduction (CGI art. 144 :
+  // hébergement, restauration, réception, véhicule de tourisme…)
+  vatNonDeductible Boolean @default(false)
+
   // Totaux en centimes FCFA
   subtotalExclVat Int @default(0)
   vatAmount       Int @default(0)
@@ -423,6 +430,9 @@ model InvoiceLine {
   unitPrice   Int // centimes FCFA, HT
   discountPct Int     @default(0) // centièmes de % : 12,5% => 1250
   vatRate     VatRate @default(STANDARD)
+  // Prestation de services : TVA exigible à l'encaissement
+  // (CGI art. 134-1-b). Livraison de biens : à la livraison.
+  isService   Boolean @default(false)
 
   // Calculés et figés à la validation
   lineExclVat Int @default(0)
@@ -450,6 +460,10 @@ model InvoicePayment {
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   amount    Int // centimes FCFA
+  // TVA retenue à la source par le client (CGI art. 149-2) : elle
+  // solde la facture comme un encaissement, et se déduit de la
+  // TVA due sur présentation de l'attestation.
+  vatWithheld Int @default(0)
   method    PaymentMethod
   reference String?
   paidAt    DateTime
@@ -467,7 +481,7 @@ model InvoicePayment {
 
 enum DeclarationType {
   VAT_MONTHLY // TVA mensuelle — dépôt avant le 15 du mois suivant
-  VAT_NIL     // Déclaration « néant » (obligatoire, amende 50 000 FCFA si omise)
+  VAT_NIL     // Déclaration « néant » (obligatoire, CGI art. 152-5)
 }
 
 enum DeclarationStatus {
@@ -497,6 +511,8 @@ model TaxDeclaration {
   vatCredit     Int @default(0) // Crédit antérieur reporté
   vatDue        Int @default(0) // Net à payer (0 si crédit)
   carryForward  Int @default(0) // Crédit reportable période suivante
+  vatWithheld   Int @default(0) // TVA retenue à la source par les clients
+  vatExcluded   Int @default(0) // TVA d'achats exclue du droit à déduction
 
   turnoverExclVat Int @default(0)
 

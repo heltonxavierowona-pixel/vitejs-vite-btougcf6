@@ -37,6 +37,11 @@ export class CreatePartyDto {
   @IsBoolean()
   isVatSubject?: boolean;
 
+  /** Clients seulement : retient la TVA à la source (CGI art. 149-2). */
+  @IsOptional()
+  @IsBoolean()
+  withholdsVat?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(255)

@@ -73,6 +73,7 @@ npm run dev
 | `cd api && node scripts/password-reset-flow-test.js` | 13 vérifications du « mot de passe oublié », avec `scripts/fake-smtp-server.py` |
 | `cd api && node scripts/admin-dashboard-test.js` | 27 vérifications du tableau de bord administrateur (chiffres, clients, gestes, exports, e-mails) |
 | `cd api && node scripts/neero-flow-test.js` | 30 vérifications de l'encaissement Neero contre un faux serveur Neero (voir docs/NEERO.md) |
+| `cd api && API_URL=http://localhost:3000/api python3 scripts/cgi-2026-test.py` | 22 vérifications des règles de TVA du CGI 2026 (services à l'encaissement, exclusions de déduction, retenue à la source, IGS) |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 
@@ -86,7 +87,7 @@ npm run dev
 - **Avoirs** totaux ou partiels (`AV-…`), plafonnés au montant de la facture corrigée.
 - **Encaissements** (Mobile Money MTN et Orange, espèces, virement, chèque) et suivi des impayés.
 - **Clients, fournisseurs et catalogue** d'articles réutilisables.
-- **Déclaration de TVA mensuelle** : calcul automatique depuis les factures validées, report du crédit, déclaration néant, alerte si des factures ont changé depuis le calcul, enregistrement du dépôt et du paiement.
+- **Déclaration de TVA mensuelle** conforme au CGI 2026 : biens à la date de facture et services à l'encaissement, exclusions du droit à déduction (sans NIU, espèces ≥ 100 000 FCFA, dépenses de l'art. 144), retenue à la source, report du crédit, déclaration néant, alerte si des factures ont changé depuis le calcul, enregistrement du dépôt et du paiement. Pas de TVA pour les entreprises à l'IGS.
 - **PDF** des factures (montant en toutes lettres, ventilation de la TVA, filigrane « BROUILLON ») et des déclarations.
 - **Tableau de bord cabinet** : portefeuille trié par urgence, dossiers bloqués par des brouillons, majorations de retard estimées, charge par collaborateur.
 - **Abonnements** payés par lien de paiement Neero (validation par l'administrateur, notifications Telegram, relances), ou en ligne (Notch Pay, Stripe) ; période de grâce en cas d'impayé.
@@ -190,12 +191,7 @@ Le FCFA n'a pas de sous-unité : les centimes servent uniquement à la précisio
 
 Liste de contrôle complète (fait / reste à faire) : **[docs/MISE-EN-PRODUCTION.md](docs/MISE-EN-PRODUCTION.md)**.
 
-1. **Faire valider les règles fiscales par un expert-comptable.** Tout est centralisé dans `api/src/tax/tax.constants.ts` :
-   - règle d'arrondi exigée par la DGI ;
-   - modalités exactes du report de crédit de TVA ;
-   - périmètre de la retenue à la source ;
-   - glissement ou non de l'échéance du 15 si c'est un jour non ouvré ;
-   - format du cachet fiscal / QR code de la facture normalisée.
+1. **Règles fiscales** : alignées sur le CGI 2026, article par article, dans **[docs/CGI-2026.md](docs/CGI-2026.md)** (avec les limites connues : facturation électronique DGI, droits d'accises, prorata). Une relecture par un expert-comptable reste recommandée ; tout est centralisé dans `api/src/tax/tax.constants.ts`.
 2. **Vérifier Flutterwave** : couverture réelle MTN MoMo et Orange Money au Cameroun, frais par transaction, paiement récurrent.
 3. **Faire un paiement Stripe de test** (clé `sk_test_…`, carte `4242 4242 4242 4242`) avant de passer aux clés réelles, et vérifier dans Stripe que les webhooks arrivent bien (statut 200).
 4. **Rappels fiscaux** : `dispatchTaxReminder` (`api/src/subscription/subscription-cron.service.ts`) ne fait encore que journaliser ; les relances d'abonnement, elles, partent par e-mail.

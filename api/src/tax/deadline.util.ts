@@ -7,15 +7,15 @@
  *  plus tard le 15 du mois suivant.
  *  Exemple : TVA d'avril 2026 → dépôt avant le 15 mai 2026.
  *
- *  ⚠️ Le glissement au jour ouvré suivant lorsque le 15 tombe
- *  un week-end ou un jour férié n'est PAS confirmé.
- *  Il est désactivé par défaut (comportement prudent).
+ *  Le CGI (art. 152) ne prévoit pas de glissement au jour ouvré
+ *  suivant lorsque le 15 tombe un week-end ou un jour férié.
  * ============================================================
  */
 
 import {
   DUE_DATE_ROLLS_TO_NEXT_BUSINESS_DAY,
-  LATE_PENALTY_BP,
+  LATE_PENALTY_CAP_BP,
+  LATE_PENALTY_MONTHLY_BP,
   VAT_DECLARATION_DUE_DAY,
 } from './tax.constants';
 import { applyRateBp, roundToFranc } from './vat-calculator';
@@ -103,14 +103,30 @@ export function urgencyLevel(daysLeft: number): UrgencyLevel {
 }
 
 /**
- * Estimation de la majoration de retard.
+ * Nombre de mois de retard au sens de la LPF : tout mois commencé
+ * compte pour un mois entier, à partir du lendemain de l'échéance.
+ */
+export function monthsLate(dueDate: Date, now: Date = new Date()): number {
+  if (now.getTime() <= dueDate.getTime()) return 0;
+  let months =
+    (now.getUTCFullYear() - dueDate.getUTCFullYear()) * 12 +
+    (now.getUTCMonth() - dueDate.getUTCMonth());
+  // Mois commencé : un jour de retard au-delà du même quantième
+  // ouvre un mois supplémentaire.
+  if (now.getUTCDate() > dueDate.getUTCDate() || months === 0) months += 1;
+  return Math.max(months, 1);
+}
+
+/**
+ * Estimation de la pénalité de retard (LPF art. L 106) : 10 % par
+ * mois de retard, plafonnée à 30 % de la TVA due.
  * Purement indicative : le calcul officiel relève de la DGI.
  */
-export function estimateLatePenalty(
-  vatDue: number,
-  badFaith = false,
-): number {
-  const bp = badFaith ? LATE_PENALTY_BP.BAD_FAITH : LATE_PENALTY_BP.DEFAULT;
+export function estimateLatePenalty(vatDue: number, months = 1): number {
+  const bp = Math.min(
+    Math.max(months, 1) * LATE_PENALTY_MONTHLY_BP,
+    LATE_PENALTY_CAP_BP,
+  );
   return roundToFranc(applyRateBp(vatDue, bp));
 }
 

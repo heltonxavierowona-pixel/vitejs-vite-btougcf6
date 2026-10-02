@@ -241,9 +241,9 @@ export const roleLabel: Record<string, string> = {
 };
 
 export const taxRegimeLabel: Record<string, string> = {
-  IGS: 'Impôt général synthétique',
+  IGS: 'Impôt général synthétique (sans TVA)',
   RSI: 'Régime simplifié',
-  REEL_NORMAL: 'Réel normal',
+  REEL_NORMAL: 'Réel (TVA)',
 };
 
 export const vatRateLabel: Record<string, string> = {

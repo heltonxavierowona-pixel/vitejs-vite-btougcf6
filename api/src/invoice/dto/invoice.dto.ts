@@ -71,6 +71,11 @@ export class InvoiceLineDto {
 
   @IsEnum(VatRate)
   vatRate: VatRate;
+
+  /** Prestation de services : TVA exigible à l'encaissement (CGI art. 134). */
+  @IsOptional()
+  @IsBoolean()
+  isService?: boolean;
 }
 
 export class CreateInvoiceDto {
@@ -99,6 +104,11 @@ export class CreateInvoiceDto {
   @IsString()
   @MaxLength(60)
   supplierReference?: string;
+
+  /** Achats : TVA exclue du droit à déduction (CGI art. 144). */
+  @IsOptional()
+  @IsBoolean()
+  vatNonDeductible?: boolean;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'Une facture doit comporter au moins une ligne.' })
@@ -155,6 +165,16 @@ export class RecordPaymentDto {
   @Min(1)
   @Max(MAX_UNIT_PRICE)
   amount: number;
+
+  /**
+   * TVA retenue à la source par le client (CGI art. 149-2), en
+   * centimes. Elle solde la facture au même titre qu'un encaissement.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_UNIT_PRICE)
+  vatWithheld?: number;
 
   @IsEnum(PaymentMethod)
   method: PaymentMethod;

@@ -154,9 +154,11 @@ function Parties() {
                       {party.city && ` · ${party.city}`}
                     </span>
                   </div>
-                  {party.isVatSubject && (
+                  {(party.isVatSubject || party.withholdsVat) && (
                     <span className="text-xs text-inksoft shrink-0">
-                      Assujetti
+                      {[party.isVatSubject && 'Assujetti', party.withholdsVat && 'Retenue TVA']
+                        .filter(Boolean)
+                        .join(' · ')}
                     </span>
                   )}
                 </button>
@@ -205,6 +207,7 @@ function PartyDialog({
     name: party?.name ?? '',
     niu: party?.niu ?? '',
     isVatSubject: party?.isVatSubject ?? false,
+    withholdsVat: party?.withholdsVat ?? false,
     address: party?.address ?? '',
     city: party?.city ?? '',
     phone: party?.phone ?? '',
@@ -231,6 +234,7 @@ function PartyDialog({
         name: form.name.trim(),
         niu: optional(form.niu),
         isVatSubject: form.isVatSubject,
+        ...(isCustomer && { withholdsVat: form.withholdsVat }),
         address: optional(form.address),
         city: optional(form.city),
         phone: optional(form.phone),
@@ -294,6 +298,26 @@ function PartyDialog({
             )}
           </span>
         </label>
+
+        {isCustomer && (
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.withholdsVat}
+              onChange={(e) => set('withholdsVat')(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-sm">
+              Retient la TVA à la source
+              <span className="block text-xs text-inksoft">
+                État, commune, établissement ou entreprise publique, ou grande
+                entreprise de la liste officielle : ce client vous paie hors TVA
+                et reverse lui-même la TVA aux impôts (CGI art. 149-2). Demandez-lui
+                l’attestation de retenue.
+              </span>
+            </span>
+          </label>
+        )}
 
         <Field
           label="NIU"
