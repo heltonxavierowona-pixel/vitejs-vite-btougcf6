@@ -256,9 +256,22 @@ Deno.serve(handler(async (req) => {
   if (!(await isServiceCall(req))) throw new HttpError(401, 'Secret invalide')
   const body = (await req.json()) as { kind?: string; message_id?: string; conversation_id?: string; post_id?: string } & Partial<CommentHook>
 
-  if (body.kind === 'publish' && body.post_id) return json(await publishPost(body.post_id))
+  // Publication et réponse aux commentaires : traitements longs (IA, Instagram), en arrière-plan.
+  const background = (name: string, p: Promise<unknown>) => {
+    const task = p.then((r) => console.log(name, JSON.stringify(r)))
+      .catch((e) => console.error(name, e instanceof Error ? e.message : e))
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(task)
+    return task
+  }
+  if (body.kind === 'publish' && body.post_id) {
+    const task = background('publish', publishPost(body.post_id))
+    if (typeof EdgeRuntime === 'undefined') await task
+    return json({ accepted: true }, 202)
+  }
   if (body.kind === 'comment' && body.comment_id && body.prospect_id && body.conversation_id && body.channel_account_id) {
-    return json(await replyToComment(body as CommentHook))
+    const task = background('comment', replyToComment(body as CommentHook))
+    if (typeof EdgeRuntime === 'undefined') await task
+    return json({ accepted: true }, 202)
   }
 
   if (!body.message_id) throw new HttpError(400, 'message_id requis')
