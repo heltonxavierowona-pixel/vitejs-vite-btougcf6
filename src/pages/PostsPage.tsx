@@ -15,6 +15,19 @@ const STATUS: Record<PostStatus, { label: string; cls: string }> = {
   failed: { label: 'Échec', cls: 'badge-error' },
 }
 
+// Erreurs Meta traduites : la plupart viennent d'une autorisation manquante dans la connexion Facebook.
+function publishError(post: Post): string {
+  const e = post.error ?? ''
+  if (/instagram_content_publish/.test(e)) {
+    return 'Autorisation « instagram_content_publish » manquante. Ajoutez-la à la configuration Facebook Login de l\'app Meta, puis reconnectez Facebook dans « Canaux ».'
+  }
+  if (/"code":(10|200)\b|permission/i.test(e)) {
+    return 'Autorisation « pages_manage_posts » manquante. Ajoutez-la à la configuration Facebook Login de l\'app Meta, puis reconnectez Facebook dans « Canaux ».'
+  }
+  if (/"code":190\b/.test(e)) return 'Connexion Facebook expirée : reconnectez Facebook dans « Canaux ».'
+  return e
+}
+
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // datetime-local ↔ ISO, à l'heure du téléphone.
@@ -171,7 +184,7 @@ function PostCard({ post, onChange, onDelete }: { post: Post; onChange: (p: Post
         </label>
       )}
 
-      {post.status === 'failed' && post.error && <p className="error">{post.error}</p>}
+      {post.status === 'failed' && post.error && <p className="error">{publishError(post)}</p>}
       {post.status === 'scheduled' && post.scheduled_at && (
         <p className="muted small">Publication prévue le {new Date(post.scheduled_at).toLocaleString('fr-FR')}</p>
       )}

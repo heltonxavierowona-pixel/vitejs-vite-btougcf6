@@ -602,7 +602,7 @@ But : provoquer des commentaires et des messages privés. Un agent IA répond en
 RÈGLES
 - ${count} publication(s) par réseau parmi : ${channels.join(', ')}. Chaque publication a un angle différent (problème/solution, témoignage type, question, bénéfice, offre, coulisses).
 - Accroche forte dans la première ligne, phrases courtes, langage simple, ton : ${ctx.product?.tone ?? 'chaleureux et direct'}.
-- N'affirme que ce qui figure dans la description et les CONNAISSANCES PRODUIT. Un prix uniquement s'il y figure. Aucun faux témoignage nominatif, aucune promesse de résultat chiffrée.
+- N'affirme que ce qui figure dans la description et les CONNAISSANCES PRODUIT. Un prix uniquement s'il y figure. N'invente AUCUN témoignage, citation de client (« ils nous disent… »), statistique ni promesse de résultat chiffrée.
 - Termine par un appel à l'action qui pousse à COMMENTER ou à écrire en privé (ex. « Commentez INFO et on vous écrit en privé »).
 - Aucun lien dans le texte.
 - facebook : 300 à 900 caractères, 0 à 3 émojis, 0 à 2 hashtags.
