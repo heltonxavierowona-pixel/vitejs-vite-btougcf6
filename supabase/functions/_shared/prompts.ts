@@ -488,12 +488,17 @@ function amounts(text: string): string[] {
   return (text.match(/\d[\d\s.,]*\d|\d{3,}/g) ?? []).map((a) => a.replace(/\D/g, '')).filter((a) => a.length >= 3)
 }
 
-// Pour un agent de vente, parler du prix ou du paiement est normal : ces sujets ne bloquent
-// la réponse que si un montant cité n'est pas dans les connaissances (prix inventé).
-export function salesTopics(topics: string[], text: string, knowledge: string | null | undefined): string[] {
-  const known = (knowledge ?? '').replace(/[\s.,]/g, '')
-  const invented = amounts(text).some((a) => !known.includes(a))
-  return topics.filter((t) => (t === 'prix' || t === 'paiement') ? invented : true)
+// Pour un agent de vente, parler du prix, du paiement, d'un devis ou d'une facture est normal.
+// Une réponse n'attend la validation que si l'IA s'engage sur ce que les connaissances ne disent pas :
+// un montant inventé, une remise ou un remboursement non prévus.
+export function salesTopics(text: string, knowledge: string | null | undefined): string[] {
+  const k = knowledge ?? ''
+  const known = k.replace(/[\s.,]/g, '')
+  const topics: string[] = []
+  if (amounts(text).some((a) => !known.includes(a))) topics.push('prix')
+  if (SENSITIVE_PATTERNS.remise.test(text) && !SENSITIVE_PATTERNS.remise.test(k)) topics.push('remise')
+  if (SENSITIVE_PATTERNS.remboursement.test(text) && !SENSITIVE_PATTERNS.remboursement.test(k)) topics.push('remboursement')
+  return topics
 }
 
 export function normalizeAutopilot(
@@ -507,11 +512,9 @@ export function normalizeAutopilot(
     text = end > max * 0.5 ? cut.slice(0, end + 1) : cut.slice(0, max - 1).trimEnd() + '…'
   }
   const e = (raw.escalate ?? {}) as { is?: unknown; reason?: unknown }
-  const s = (raw.sensitive ?? {}) as { topics?: unknown }
-  const declared = (Array.isArray(s.topics) ? s.topics.map(String) : [])
-    .map((t) => t.toLowerCase())
-    .map((t) => /prix|tarif|price|co[uû]t/.test(t) ? 'prix' : /paie|pay/.test(t) ? 'paiement' : t)
-  const topics = salesTopics([...new Set([...declared, ...detectSensitive(text), ...detectSensitive(lastInbound)])], text, knowledge)
+  // Seul le texte de la réponse compte (pas la question du prospect ni l'avis de l'IA, trop prudent).
+  void lastInbound
+  const topics = salesTopics(text, knowledge)
   return {
     closing_action: CLOSING_ACTIONS.includes(String(raw.closing_action)) ? raw.closing_action as ClosingAction : null,
     text,
