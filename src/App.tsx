@@ -19,6 +19,7 @@ import BillingPage from './pages/BillingPage'
 import AdminPage from './pages/AdminPage'
 import ReportsPage from './pages/ReportsPage'
 import Logo from './components/Logo'
+import ErrorBoundary from './components/ErrorBoundary'
 import LandingPage from './pages/public/LandingPage'
 import { DataDeletionPage, MentionsPage, PrivacyPage, TermsPage } from './pages/public/LegalPages'
 import './App.css'
@@ -189,6 +190,7 @@ export default function App() {
 
       <main className="content">
         <BillingBanner state={ent} />
+        <ErrorBoundary resetKey={pathname}>
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/produits" element={<ProductsPage />} />
@@ -202,6 +204,7 @@ export default function App() {
           <Route path="/abonnement" element={<BillingPage />} />
           {admin && <Route path="/admin" element={<AdminPage />} />}
         </Routes>
+        </ErrorBoundary>
       </main>
     </div>
   )
