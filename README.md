@@ -73,7 +73,7 @@ npm run dev
 | `cd api && node scripts/password-reset-flow-test.js` | 13 vérifications du « mot de passe oublié », avec `scripts/fake-smtp-server.py` |
 | `cd api && node scripts/admin-dashboard-test.js` | 27 vérifications du tableau de bord administrateur (chiffres, clients, gestes, exports, e-mails) |
 | `cd api && node scripts/neero-flow-test.js` | 30 vérifications de l'encaissement Neero contre un faux serveur Neero (voir docs/NEERO.md) |
-| `cd api && API_URL=http://localhost:3000/api python3 scripts/cgi-2026-test.py` | 27 vérifications des règles de TVA du CGI 2026 (services à l'encaissement, exclusions de déduction, retenue à la source, référence DGI, IGS) |
+| `cd api && API_URL=http://localhost:3000/api python3 scripts/cgi-2026-test.py` | 33 vérifications des règles de TVA du CGI 2026 (services à l'encaissement, exclusions de déduction, retenue à la source, référence DGI, exports, IGS) |
 | `cd api && node scripts/stripe-flow-test.js` | 28 vérifications du cycle d'abonnement par carte, contre un faux serveur Stripe (voir l'en-tête du script) |
 | `cd web && npm run typecheck && npm run build` | Types et build du front |
 

@@ -181,16 +181,35 @@ function InvoiceDetailView() {
           )}
         </div>
 
-        <Button
-          variant="secondary"
-          onClick={() =>
-            api
-              .openPdf(`${base}/pdf`)
-              .catch((err) => setError(errorMessage(err, 'PDF indisponible')))
-          }
-        >
-          Ouvrir le PDF
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={() =>
+              api
+                .openPdf(`${base}/pdf`)
+                .catch((err) => setError(errorMessage(err, 'PDF indisponible')))
+            }
+          >
+            Ouvrir le PDF
+          </Button>
+          {(['xlsx', 'csv', 'xml'] as const).map((format) => (
+            <Button
+              key={format}
+              variant="ghost"
+              className="px-3"
+              onClick={() =>
+                api
+                  .download(
+                    `${base}/export?format=${format}`,
+                    `facture-${invoice.number ?? 'brouillon'}.${format}`,
+                  )
+                  .catch((err) => setError(errorMessage(err, 'Export impossible')))
+              }
+            >
+              {format === 'xlsx' ? 'Excel' : format.toUpperCase()}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {error && <Alert tone="error">{error}</Alert>}

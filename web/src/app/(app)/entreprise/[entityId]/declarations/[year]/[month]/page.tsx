@@ -369,6 +369,39 @@ export default function DeclarationPage() {
         </Alert>
       )}
 
+      <Panel title="Exporter les factures du mois">
+        <div className="p-4 space-y-3 text-sm">
+          <p className="text-inksoft">
+            Pour les reporter sur la plateforme de la DGI ou les transmettre à votre
+            comptable sans ressaisie.
+          </p>
+          {(['SALE', 'PURCHASE'] as const).map((direction) => (
+            <div key={direction} className="flex flex-wrap items-center gap-2">
+              <span className="w-16 font-medium">
+                {direction === 'SALE' ? 'Ventes' : 'Achats'}
+              </span>
+              {(['xlsx', 'csv', 'xml'] as const).map((format) => (
+                <Button
+                  key={format}
+                  variant="secondary"
+                  className="h-8 px-3"
+                  onClick={() =>
+                    api
+                      .download(
+                        `/entities/${entityId}/exports/invoices?year=${year}&month=${month}&direction=${direction}&format=${format}`,
+                        `${direction === 'SALE' ? 'ventes' : 'achats'}-${year}-${String(month).padStart(2, '0')}.${format}`,
+                      )
+                      .catch((err) => setError(errorMessage(err, 'Export impossible')))
+                  }
+                >
+                  {format === 'xlsx' ? 'Excel' : format.toUpperCase()}
+                </Button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Panel>
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
         <Button

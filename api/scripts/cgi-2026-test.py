@@ -144,6 +144,33 @@ s, dr = call('POST', f'/entities/{ent}/invoices', {'direction': 'SALE', 'issuedA
 s, r = call('PUT', f'/entities/{ent}/invoices/{dr["id"]}/dgi-reference', {'reference': 'DGI-X'}, tok)
 check('pas de référence DGI sur un brouillon', s == 400, r)
 
+# Exports CSV / Excel / XML (report sur la plateforme DGI sans ressaisie)
+def raw(path):
+    req = urllib.request.Request(BASE + path)
+    req.add_header('Authorization', 'Bearer ' + tok)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, r.headers.get('Content-Type', ''), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, '', e.read()
+s, ct, body = raw(f'/entities/{ent}/invoices/{st["id"]}/export?format=csv')
+text = body.decode('utf-8-sig')
+check('export CSV d’une facture', s == 200 and 'text/csv' in ct and 'Prise en charge État' in text
+      and 'DGI-2026-0001' in text and 'Référence DGI' in text.splitlines()[0], text[:200])
+s, ct, body = raw(f'/entities/{ent}/invoices/{st["id"]}/export?format=xlsx')
+check('export Excel d’une facture', s == 200 and body[:2] == b'PK' and 'spreadsheetml' in ct, ct)
+s, ct, body = raw(f'/entities/{ent}/invoices/{st["id"]}/export?format=xml')
+xml = body.decode()
+check('export XML d’une facture', s == 200 and '<ReferenceDGI>DGI-2026-0001</ReferenceDGI>' in xml
+      and '<Mention>Prise en charge État</Mention>' in xml, xml[:200])
+s, ct, body = raw(f'/entities/{ent}/exports/invoices?year={PY}&month={PM}&direction=SALE&format=csv')
+rows = body.decode('utf-8-sig').strip().splitlines()
+check('export des ventes du mois (une ligne par ligne de facture)', s == 200 and len(rows) == 1 + 4, len(rows))
+s, ct, body = raw(f'/entities/{ent}/exports/invoices?year={PY}&month={PM}&direction=PURCHASE&format=xlsx')
+check('export des achats du mois en Excel', s == 200 and body[:2] == b'PK', s)
+s, ct, body = raw(f'/entities/{ent}/invoices/{st["id"]}/export?format=pdfx')
+check('format inconnu refusé', s == 400, s)
+
 # ---------------------------------------------------------------- IGS
 tok2, ent2, _ = register('igs', 'IGS')
 _, c2 = call('POST', f'/entities/{ent2}/customers', {'name': 'Client'}, tok2)
