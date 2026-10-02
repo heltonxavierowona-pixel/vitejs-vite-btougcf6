@@ -91,7 +91,11 @@ export default function InboxPage() {
     [selected, refresh, loadMessages],
   )
 
-  useEffect(() => bottom.current?.scrollIntoView({ block: 'end' }), [messages])
+  // Accolades : sur les navigateurs récents scrollIntoView renvoie une promesse, que React
+  // prendrait pour une fonction de nettoyage (« … is not a function »).
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: 'end' })
+  }, [messages])
 
   const current = conversations.find((c) => c.id === selected)
   // LinkedIn / X : pas d'API d'envoi, l'utilisateur copie la réponse et l'envoie lui-même.
