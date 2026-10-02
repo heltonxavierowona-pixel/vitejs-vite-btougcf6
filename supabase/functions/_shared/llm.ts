@@ -44,6 +44,8 @@ export async function chatJSON(opts: {
       temperature: opts.temperature ?? 0.3,
       max_tokens: maxTokens,
       response_format: { type: 'json_object' },
+      // Modèles « à raisonnement » : le raisonnement ne doit pas manger la réponse.
+      reasoning: { exclude: true },
       usage: { include: true },
       messages: [
         { role: 'system', content: opts.system },
@@ -51,38 +53,54 @@ export async function chatJSON(opts: {
       ],
     }),
   })
+  const parse = (raw: string): Record<string, unknown> | null => {
+    const text = raw.replace(/<think>[\s\S]*?<\/think>/g, '')
+    try {
+      const v = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+      return v && typeof v === 'object' ? v : null
+    } catch {
+      return null
+    }
+  }
+
   let res = await send([opts.model], opts.maxTokens)
   if (res.status === 402) {
     // Crédit OpenRouter bas : on réessaie une fois avec ce que le crédit permet encore.
     const afford = Number((await res.text()).match(/can only afford (\d+)/)?.[1] ?? 0)
     if (afford >= 400) res = await send([opts.model], afford - 50)
   }
-  // Crédit épuisé, modèle saturé ou en panne : modèles gratuits de secours, jusqu'à 3 essais espacés.
-  const free = [...new Set([opts.model, ...FREE_MODELS])].filter((m) => m.endsWith(':free')).slice(0, 3)
-  for (let i = 0; !res.ok && RETRYABLE(res.status) && free.length && i < 3; i++) {
-    console.error('openrouter', res.status, (await res.text().catch(() => '')).slice(0, 200))
+  // Crédit épuisé, modèle saturé, en panne ou réponse illisible : modèles gratuits de secours,
+  // jusqu'à 3 essais espacés (le modèle fautif passe en dernier).
+  let free = [...new Set([opts.model, ...FREE_MODELS])].filter((m) => m.endsWith(':free'))
+  for (let i = 0; i < 4; i++) {
+    if (res.ok) {
+      const completion = await res.json().catch(() => ({}))
+      const raw: string = completion.choices?.[0]?.message?.content ?? ''
+      const parsed = parse(raw)
+      if (parsed) {
+        const usage = completion.usage ?? {}
+        await rest('rpc/record_ai_usage', {
+          method: 'POST',
+          body: {
+            p_org: opts.orgId, p_feature: opts.feature, p_model: completion.model ?? opts.model,
+            p_in: usage.prompt_tokens ?? 0, p_out: usage.completion_tokens ?? 0, p_cost: usage.cost ?? 0,
+          },
+        }).catch((e) => console.error('ai_usage', e)) // ne bloque jamais la réponse
+        return parsed
+      }
+      console.error('openrouter illisible', completion.model, JSON.stringify(raw).slice(0, 300))
+      free = [...free.filter((m) => m !== completion.model), ...free.filter((m) => m === completion.model)]
+    } else {
+      if (!RETRYABLE(res.status)) break
+      console.error('openrouter', res.status, (await res.text().catch(() => '')).slice(0, 200))
+    }
+    if (i === 3 || !free.length) break
     if (i) await new Promise((r) => setTimeout(r, i * 6000))
-    res = await send(free, opts.maxTokens)
+    res = await send(free.slice(0, 3), Math.max(opts.maxTokens, 1200))
   }
   if (res.status === 402) {
     throw new HttpError(402, 'Crédit IA épuisé : rechargez votre compte OpenRouter (openrouter.ai → Settings → Credits) pour que l\'agent continue à répondre.')
   }
   if (!res.ok) throw new HttpError(502, `Service IA saturé (${res.status}), réessayez dans un instant`)
-  const completion = await res.json()
-
-  const usage = completion.usage ?? {}
-  await rest('rpc/record_ai_usage', {
-    method: 'POST',
-    body: {
-      p_org: opts.orgId, p_feature: opts.feature, p_model: completion.model ?? opts.model,
-      p_in: usage.prompt_tokens ?? 0, p_out: usage.completion_tokens ?? 0, p_cost: usage.cost ?? 0,
-    },
-  }).catch((e) => console.error('ai_usage', e)) // ne bloque jamais la réponse
-
-  const raw: string = completion.choices?.[0]?.message?.content ?? ''
-  try {
-    return JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
-  } catch {
-    throw new HttpError(502, 'Réponse IA illisible, réessayez')
-  }
+  throw new HttpError(502, 'Réponse IA illisible, réessayez')
 }
