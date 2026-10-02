@@ -18,6 +18,7 @@ function pauseLabel(reason: string | null | undefined): string {
   if (!reason) return 'IA en pause'
   if (reason === 'human_reply') return 'Vous avez repris la main'
   if (reason === 'manual') return 'IA mise en pause'
+  if (reason === 'converted') return 'Client converti : lien d\'achat ou contact du vendeur envoyé, l\'IA s\'est retirée'
   if (reason.startsWith('escalation:')) return `L'IA vous passe la main : ${reason.slice(11)}`
   return 'IA en pause'
 }

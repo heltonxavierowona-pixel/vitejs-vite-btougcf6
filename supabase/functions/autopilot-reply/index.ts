@@ -2,7 +2,7 @@
 // Agent commercial autonome : appelé par numera-hooks après chaque message reçu
 // (WhatsApp, Messenger, Instagram). Rédige UNE réponse et conclut la vente quand le prospect est
 // prêt (lien d'achat ou contact du propriétaire). Garde-fous revérifiés en SQL (queue_autopilot_reply) :
-//   sujet sensible → validation humaine ; passage de relais → pause de l'IA ; sinon → envoi.
+//   prix inventé → validation humaine ; escalade → alerte (l'IA continue) ; client converti → pause.
 import { handler, HttpError, isServiceCall, json, rest } from '../_shared/supabase.ts'
 import { chatJSON, MODELS } from '../_shared/llm.ts'
 import {
@@ -51,9 +51,12 @@ Deno.serve(handler(async (req) => {
       },
     })
 
-  // Texte uniquement : un vocal ou une image est confié à l'humain.
+  // Vocal, image… : l'IA ne les comprend pas ; elle demande un message écrit et continue.
   if (MEDIA_PLACEHOLDER.test(last.text.trim())) {
-    return json(await queue('', false, [], true, 'message non textuel (vocal, image…)'))
+    return json(await queue(
+      'Je ne peux pas encore lire les vocaux ni les images ici 🙏 Pouvez-vous m\'écrire votre question en quelques mots ?',
+      false, [], true, 'message non textuel (vocal, image…)',
+    ))
   }
 
   const raw = await chatJSON({
@@ -75,24 +78,21 @@ Deno.serve(handler(async (req) => {
     if (closing.step) {
       await rest('rpc/record_closing_step', { method: 'POST', body: { p_prospect: conv.prospect_id, p_step: closing.step } })
     }
-    // Lien d'achat ou contact du propriétaire envoyé : prospect « chaud » → alerte e-mail au vendeur.
+    // Client converti (lien d'achat ou contact du vendeur envoyé) : prospect « chaud », alerte e-mail,
+    // et l'IA se retire de la conversation (seule pause automatique).
     if (sale.step) {
       await rest(`prospects?id=eq.${conv.prospect_id}&stage=not.in.(hot,won,lost)`, {
         method: 'PATCH', prefer: 'return=minimal', body: { stage: 'hot' },
+      })
+      await rest(`conversations?id=eq.${conversation_id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { ai_paused: true, ai_paused_reason: 'converted', ai_paused_at: new Date().toISOString() },
       })
     }
     return result
   }
 
-  // Passage de relais : la réponse d'attente passe quand même par la validation si elle est sensible.
-  if (reply.escalate && reply.text) {
-    await recordStep(await queue(reply.text, reply.sensitive, reply.topics, false, null) as { action?: string })
-    await rest('conversations?id=eq.' + conversation_id, {
-      method: 'PATCH', prefer: 'return=minimal',
-      body: { ai_paused: true, ai_paused_reason: `escalation:${reply.reason}`, ai_paused_at: new Date().toISOString() },
-    })
-    return json({ action: 'escalated', reason: reply.reason })
-  }
+  // Escalade = simple alerte (SQL) : la réponse part quand même et l'IA continue.
   const result = await queue(reply.text, reply.sensitive, reply.topics, reply.escalate, reply.reason) as { action?: string }
   return json({ ...(await recordStep(result)), closing_step: closing.step, sale_step: sale.step })
 }))

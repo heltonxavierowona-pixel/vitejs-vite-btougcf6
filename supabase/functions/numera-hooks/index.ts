@@ -210,17 +210,8 @@ async function replyToComment(h: CommentHook) {
   if (raw.skip === true) return { skipped: 'ai_skip' }
   const reply = normalizeAutopilot(raw, h.comment, channel, ctx.product?.knowledge)
   if (!reply.text) return { skipped: 'empty' }
-  // Prix inventé ou demande particulière : rien n'est envoyé, l'utilisateur reprend la main.
-  if (reply.sensitive || reply.escalate) {
-    await rest(`conversations?id=eq.${h.conversation_id}`, {
-      method: 'PATCH', prefer: 'return=minimal',
-      body: {
-        ai_paused: true, ai_paused_at: new Date().toISOString(),
-        ai_paused_reason: `escalation:commentaire (${reply.reason ?? reply.topics.join(', ')})`,
-      },
-    })
-    return { escalated: true }
-  }
+  // Prix inventé : ce premier message n'est pas envoyé (l'IA ne s'arrête pas pour autant).
+  if (reply.sensitive) return { skipped: 'sensitive', topics: reply.topics }
   const sale = applySaleLinks(reply.text, ctx, reply.closing_action)
 
   const [msg] = await rest<{ id: string }[]>('messages', {
@@ -240,6 +231,10 @@ async function replyToComment(h: CommentHook) {
   if (r.ok && sale.step) {
     await rest(`prospects?id=eq.${h.prospect_id}&stage=not.in.(hot,won,lost)`, {
       method: 'PATCH', prefer: 'return=minimal', body: { stage: 'hot' },
+    })
+    await rest(`conversations?id=eq.${h.conversation_id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { ai_paused: true, ai_paused_reason: 'converted', ai_paused_at: new Date().toISOString() },
     })
   }
 
