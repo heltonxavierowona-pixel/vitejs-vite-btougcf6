@@ -24,13 +24,13 @@ export async function chatJSON(opts: {
     throw new HttpError(402, 'Quota IA de votre formule atteint, ou abonnement inactif : voir « Abonnement »')
   }
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const call = (maxTokens: number) => fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${Deno.env.get('OPENROUTER_API_KEY')}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: opts.model,
       temperature: opts.temperature ?? 0.3,
-      max_tokens: opts.maxTokens,
+      max_tokens: maxTokens,
       response_format: { type: 'json_object' },
       usage: { include: true },
       messages: [
@@ -39,7 +39,16 @@ export async function chatJSON(opts: {
       ],
     }),
   })
-  if (!res.ok) throw new HttpError(502, `OpenRouter: ${await res.text()}`)
+  let res = await call(opts.maxTokens)
+  if (res.status === 402) {
+    // Crédit OpenRouter bas : on réessaie une fois avec ce que le crédit permet encore.
+    const afford = Number((await res.text()).match(/can only afford (\d+)/)?.[1] ?? 0)
+    if (afford >= 400) res = await call(afford - 50)
+    if (res.status === 402 || afford < 400) {
+      throw new HttpError(402, 'Crédit IA épuisé : rechargez votre compte OpenRouter (openrouter.ai → Settings → Credits) pour que l\'agent continue à répondre.')
+    }
+  }
+  if (!res.ok) throw new HttpError(502, `Service IA indisponible (${res.status}), réessayez dans un instant`)
   const completion = await res.json()
 
   const usage = completion.usage ?? {}

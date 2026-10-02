@@ -37,10 +37,11 @@ Deno.serve(handler(async (req) => {
     },
   }
   const raw = await chatJSON({
-    model: MODELS.write,
+    // Modèle économique : les publications restent modifiables avant publication.
+    model: MODELS.fast,
     system: buildPostsSystem(ctx, channels, n),
     user: buildPostsUser(ctx, brief?.slice(0, 500)),
-    maxTokens: 3000,
+    maxTokens: Math.min(3000, 350 + 450 * n * channels.length),
     temperature: 0.8,
     orgId,
     feature: 'generate_posts',
