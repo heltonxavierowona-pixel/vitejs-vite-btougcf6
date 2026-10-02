@@ -2,12 +2,23 @@
 // par organisation (table ai_usage) pour la facturation du SaaS.
 import { HttpError, rest } from './supabase.ts'
 
+// Nom de modèle saisi dans les secrets : espaces et point final (faute de frappe fréquente) retirés.
+const env = (name: string) => Deno.env.get(name)?.trim().replace(/\.+$/, '') || undefined
+
 export const MODELS = {
   // Tri, extraction, profils : rapide et économique.
-  fast: Deno.env.get('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-4.5',
+  fast: env('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-4.5',
   // Rédaction des messages : qualité d'écriture.
-  write: Deno.env.get('OPENROUTER_WRITE_MODEL') ?? 'anthropic/claude-sonnet-4.5',
+  write: env('OPENROUTER_WRITE_MODEL') ?? 'anthropic/claude-sonnet-4.5',
 }
+
+// Modèles gratuits de secours (crédit épuisé, modèle saturé ou en panne). OpenRouter essaie la
+// liste dans l'ordre (paramètre « models »).
+const FREE_MODELS = (env('OPENROUTER_FALLBACK_MODELS')
+  ?? 'google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-26b-a4b-it:free')
+  .split(',').map((m) => m.trim()).filter(Boolean)
+
+const RETRYABLE = (status: number) => status === 402 || status === 408 || status === 429 || status >= 500
 
 export async function chatJSON(opts: {
   model: string
@@ -24,11 +35,12 @@ export async function chatJSON(opts: {
     throw new HttpError(402, 'Quota IA de votre formule atteint, ou abonnement inactif : voir « Abonnement »')
   }
 
-  const call = (maxTokens: number) => fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const send = (models: string[], maxTokens: number) => fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${Deno.env.get('OPENROUTER_API_KEY')}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: opts.model,
+      model: models[0],
+      models: models.length > 1 ? models : undefined,
       temperature: opts.temperature ?? 0.3,
       max_tokens: maxTokens,
       response_format: { type: 'json_object' },
@@ -39,16 +51,23 @@ export async function chatJSON(opts: {
       ],
     }),
   })
-  let res = await call(opts.maxTokens)
+  let res = await send([opts.model], opts.maxTokens)
   if (res.status === 402) {
     // Crédit OpenRouter bas : on réessaie une fois avec ce que le crédit permet encore.
     const afford = Number((await res.text()).match(/can only afford (\d+)/)?.[1] ?? 0)
-    if (afford >= 400) res = await call(afford - 50)
-    if (res.status === 402 || afford < 400) {
-      throw new HttpError(402, 'Crédit IA épuisé : rechargez votre compte OpenRouter (openrouter.ai → Settings → Credits) pour que l\'agent continue à répondre.')
-    }
+    if (afford >= 400) res = await send([opts.model], afford - 50)
   }
-  if (!res.ok) throw new HttpError(502, `Service IA indisponible (${res.status}), réessayez dans un instant`)
+  // Crédit épuisé, modèle saturé ou en panne : modèles gratuits de secours, jusqu'à 3 essais espacés.
+  const free = [...new Set([opts.model, ...FREE_MODELS])].filter((m) => m.endsWith(':free')).slice(0, 3)
+  for (let i = 0; !res.ok && RETRYABLE(res.status) && free.length && i < 3; i++) {
+    console.error('openrouter', res.status, (await res.text().catch(() => '')).slice(0, 200))
+    if (i) await new Promise((r) => setTimeout(r, i * 6000))
+    res = await send(free, opts.maxTokens)
+  }
+  if (res.status === 402) {
+    throw new HttpError(402, 'Crédit IA épuisé : rechargez votre compte OpenRouter (openrouter.ai → Settings → Credits) pour que l\'agent continue à répondre.')
+  }
+  if (!res.ok) throw new HttpError(502, `Service IA saturé (${res.status}), réessayez dans un instant`)
   const completion = await res.json()
 
   const usage = completion.usage ?? {}

@@ -101,8 +101,9 @@ async function processInbound(messageId: string, conversationId: string, secret:
     `messages?conversation_id=eq.${conversationId}&direction=eq.inbound&select=id&order=sent_at.desc&limit=1`,
   )
   if (last && last.id !== messageId) return
-  await callFunction('update-profile', secret, { conversation_id: conversationId })
+  // Réponse d'abord (le client attend), profil ensuite : utile quand l'IA est limitée en débit.
   await callFunction('autopilot-reply', secret, { conversation_id: conversationId })
+  await callFunction('update-profile', secret, { conversation_id: conversationId })
 }
 
 // Graph API avec le token de la Page ; renvoie { ok, data }.
