@@ -11,6 +11,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -76,6 +77,11 @@ export class InvoiceLineDto {
   @IsOptional()
   @IsBoolean()
   isService?: boolean;
+
+  /** TVA prise en charge par l'État : mention « Prise en charge État » (CGI art. 150). */
+  @IsOptional()
+  @IsBoolean()
+  stateBorne?: boolean;
 }
 
 export class CreateInvoiceDto {
@@ -227,4 +233,12 @@ export class ListInvoicesQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+}
+
+export class SetDgiReferenceDto {
+  /** Numéro ou code attribué par le système de facturation électronique de la DGI. */
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  reference: string;
 }

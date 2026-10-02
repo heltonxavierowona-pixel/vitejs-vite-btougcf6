@@ -56,6 +56,7 @@ export interface EditableInvoice {
     discountPct: number;
     vatRate: VatRateKey;
     isService?: boolean;
+    stateBorne?: boolean;
   }>;
 }
 
@@ -65,6 +66,8 @@ interface DraftLine extends LineInput {
   productId?: string;
   /** Prestation de services : TVA exigible à l'encaissement (CGI art. 134). */
   isService: boolean;
+  /** TVA prise en charge par l'État : mention sur la ligne (CGI art. 150). */
+  stateBorne: boolean;
   /** Saisies brutes : on ne reformate pas pendant la frappe. */
   rawQuantity: string;
   rawUnitPrice: string;
@@ -78,6 +81,7 @@ const emptyLine = (vatRate: VatRateKey = 'STANDARD'): DraftLine => ({
   key: newKey(),
   label: '',
   isService: false,
+  stateBorne: false,
   quantity: 1000,
   unitPrice: 0,
   discountPct: 0,
@@ -151,6 +155,7 @@ export function InvoiceForm({
           discountPct: line.discountPct,
           vatRate: line.vatRate,
           isService: !!line.isService,
+          stateBorne: !!line.stateBorne,
           rawQuantity: formatQuantity(line.quantity),
           rawUnitPrice: amountToInput(line.unitPrice),
           rawDiscount: line.discountPct ? String(line.discountPct / 100).replace('.', ',') : '',
@@ -278,6 +283,7 @@ export function InvoiceForm({
         discountPct: line.discountPct ?? 0,
         vatRate: line.vatRate,
         isService: line.isService,
+        stateBorne: line.stateBorne && line.vatRate === 'STANDARD',
       })),
     };
 
@@ -562,11 +568,14 @@ export function InvoiceForm({
 
                   <Field label="TVA">
                     <Select
-                      value={line.vatRate}
+                      value={line.stateBorne ? 'STATE' : line.vatRate}
                       onChange={(e) =>
-                        updateLine(line.key, {
-                          vatRate: e.target.value as VatRateKey,
-                        })
+                        updateLine(
+                          line.key,
+                          e.target.value === 'STATE'
+                            ? { vatRate: 'STANDARD', stateBorne: true }
+                            : { vatRate: e.target.value as VatRateKey, stateBorne: false },
+                        )
                       }
                     >
                       {Object.entries(vatRateLabel).map(([key, label]) => (
@@ -574,6 +583,9 @@ export function InvoiceForm({
                           {label}
                         </option>
                       ))}
+                      {isSale && !isIgs && (
+                        <option value="STATE">TVA 19,25 % prise en charge État</option>
+                      )}
                     </Select>
                   </Field>
 

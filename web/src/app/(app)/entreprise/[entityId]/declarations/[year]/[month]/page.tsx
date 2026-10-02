@@ -47,6 +47,8 @@ interface Declaration {
   taxableBase: number;
   creditMonths: number;
   creditNeedsValidation: boolean;
+  salesWithoutDgiReference: number;
+  purchasesWithoutDgiReference: number;
   excludedPurchases: Array<{
     id: string;
     number: string | null;
@@ -331,6 +333,31 @@ export default function DeclarationPage() {
             ))}
           </ul>
         </Panel>
+      )}
+
+      {(declaration.salesWithoutDgiReference > 0 ||
+        declaration.purchasesWithoutDgiReference > 0) && (
+        <Alert tone="warning">
+          {[
+            declaration.salesWithoutDgiReference > 0 &&
+              `${declaration.salesWithoutDgiReference} facture(s) de vente`,
+            declaration.purchasesWithoutDgiReference > 0 &&
+              `${declaration.purchasesWithoutDgiReference} facture(s) d’achat`,
+          ]
+            .filter(Boolean)
+            .join(' et ')}{' '}
+          de la période n’ont pas de référence DGI. Toute facture doit passer par le
+          système de facturation électronique de la DGI : sinon la TVA et la charge ne
+          sont pas déductibles (CGI art. 8 bis et 143) et l’émetteur risque une amende
+          égale au montant des factures (LPF art. L 8 bis). Saisissez les références
+          depuis chaque facture.{' '}
+          <Link
+            href={`/entreprise/${entityId}/factures`}
+            className="font-medium underline"
+          >
+            Voir les factures
+          </Link>
+        </Alert>
       )}
 
       {declaration.creditNeedsValidation && (

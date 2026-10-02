@@ -78,7 +78,7 @@ export const brand = {
   claim: 'Factures · Comptabilité · Conformité',
 
   description:
-    'Factures conformes et déclaration de TVA mensuelle pour les entreprises et cabinets comptables au Cameroun.',
+    'Facturation et déclaration de TVA mensuelle pour les entreprises et cabinets comptables au Cameroun.',
 
   assets: {
     /** Symbole + texte. À utiliser dès qu’il y a de la place. */

@@ -392,7 +392,7 @@ model Invoice {
   terms    String?
 
   // Facturation normalisée DGI
-  fiscalStamp   String? // Référence / code de certification
+  fiscalStamp   String? // Référence de la facture sur le système de facturation électronique DGI
   qrCodePayload String?
   certifiedAt   DateTime?
 
@@ -433,6 +433,9 @@ model InvoiceLine {
   // Prestation de services : TVA exigible à l'encaissement
   // (CGI art. 134-1-b). Livraison de biens : à la livraison.
   isService   Boolean @default(false)
+  // TVA prise en charge par l'État (marchés publics) : mention
+  // « Prise en charge État » sur la ligne (CGI art. 150).
+  stateBorne  Boolean @default(false)
 
   // Calculés et figés à la validation
   lineExclVat Int @default(0)

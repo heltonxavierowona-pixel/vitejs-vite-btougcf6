@@ -290,7 +290,7 @@ export default function RegisterPage() {
               {form.phone.trim().length < 6 && (
                 <Alert tone="warning">
                   Revenez à l’étape précédente pour saisir le téléphone de la
-                  société : il est obligatoire sur une facture normalisée.
+                  société : il est obligatoire sur vos factures (CGI art. 150).
                 </Alert>
               )}
 

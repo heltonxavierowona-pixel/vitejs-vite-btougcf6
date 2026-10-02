@@ -425,6 +425,7 @@ export class InvoiceService {
           discountPct: l.discountPct,
           vatRate: l.vatRate,
           isService: l.isService,
+          stateBorne: l.stateBorne,
         }))
       : (dto.lines ?? []);
 
@@ -643,6 +644,31 @@ export class InvoiceService {
     return updated;
   }
 
+  /**
+   * Enregistre la référence de la facture émise sur le système de
+   * facturation électronique de la DGI. Seule une facture validée
+   * peut en recevoir une : c'est une métadonnée de certification, les
+   * montants restent figés. Chaque changement est tracé.
+   */
+  async setDgiReference(ctx: RequestContext, id: string, reference: string) {
+    const invoice = await this.findOne(ctx, id);
+    if (invoice.status === InvoiceStatus.DRAFT) {
+      throw new BadRequestException(
+        'Validez la facture avant d’enregistrer sa référence DGI.',
+      );
+    }
+    const value = reference.trim();
+    const updated = await this.prisma.invoice.update({
+      where: { id },
+      data: { fiscalStamp: value, certifiedAt: new Date() },
+    });
+    await this.audit.log(ctx, AuditAction.UPDATE, 'Invoice', id, {
+      before: { fiscalStamp: invoice.fiscalStamp },
+      after: { fiscalStamp: value },
+    });
+    return updated;
+  }
+
   /** Historique d'audit d'une facture (fiche facture). */
   async history(ctx: RequestContext, id: string) {
     await this.findOne(ctx, id);
@@ -679,6 +705,8 @@ export class InvoiceService {
       discountPct: line.discountPct ?? 0,
       vatRate: line.vatRate,
       isService: !!line.isService,
+      // La prise en charge ne concerne qu'une TVA effectivement due.
+      stateBorne: !!line.stateBorne && line.vatRate === 'STANDARD',
       lineExclVat: totals.lines[index].exclVat,
       lineVat: totals.lines[index].vat,
       lineInclVat: totals.lines[index].inclVat,

@@ -128,6 +128,22 @@ check('solde du service encaissé', s == 201 and r['status'] == 'PAID', r)
 s, cur = call('POST', f'/entities/{ent}/declarations/{_today.year}/{_today.month}/compute', None, tok)
 check('TVA du solde déclarée le mois de l’encaissement', cur.get('vatCollected') == 962_500, cur)
 
+# Facturation électronique DGI et prise en charge État
+s, st = invoice(tok, ent, {'direction': 'SALE', 'issuedAt': day(14), 'customerId': cust['id'],
+                          'lines': [{**line('Marché public', 10_000), 'stateBorne': True}]})
+check('ligne « prise en charge État » enregistrée', s == 200 and st['lines'][0]['stateBorne'], st)
+s, view = call('GET', f'/entities/{ent}/declarations/{PY}/{PM}', token=tok)
+before = view.get('salesWithoutDgiReference')
+check('factures sans référence DGI comptées', isinstance(before, int) and before >= 4, view.get('salesWithoutDgiReference'))
+s, r = call('PUT', f'/entities/{ent}/invoices/{st["id"]}/dgi-reference', {'reference': 'DGI-2026-0001'}, tok)
+check('référence DGI enregistrée', s == 200 and r.get('fiscalStamp') == 'DGI-2026-0001', r)
+s, view = call('GET', f'/entities/{ent}/declarations/{PY}/{PM}', token=tok)
+check('une facture de moins sans référence', view.get('salesWithoutDgiReference') == before - 1, view.get('salesWithoutDgiReference'))
+s, dr = call('POST', f'/entities/{ent}/invoices', {'direction': 'SALE', 'issuedAt': day(14),
+             'customerId': cust['id'], 'lines': [line('Brouillon', 1_000)]}, tok)
+s, r = call('PUT', f'/entities/{ent}/invoices/{dr["id"]}/dgi-reference', {'reference': 'DGI-X'}, tok)
+check('pas de référence DGI sur un brouillon', s == 400, r)
+
 # ---------------------------------------------------------------- IGS
 tok2, ent2, _ = register('igs', 'IGS')
 _, c2 = call('POST', f'/entities/{ent2}/customers', {'name': 'Client'}, tok2)

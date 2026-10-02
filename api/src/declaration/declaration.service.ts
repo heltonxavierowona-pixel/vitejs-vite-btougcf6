@@ -396,7 +396,7 @@ export class DeclarationService {
     const { start, end } = this.periodBounds(period);
     const filed = this.isFiled(declaration.status);
 
-    const [pendingDrafts, isStale, creditMonths, excludedPurchases] = await Promise.all([
+    const [pendingDrafts, isStale, creditMonths, excludedPurchases, withoutDgi] = await Promise.all([
       // Brouillons datés de la période : ils n'entrent pas dans la
       // déclaration tant qu'ils ne sont pas validés.
       this.prisma.invoice.count({
@@ -410,6 +410,7 @@ export class DeclarationService {
       filed ? Promise.resolve(false) : this.isStale(ctx.entityId, declaration),
       this.creditMonths(ctx.entityId, period),
       this.excludedPurchases(ctx.entityId, start, end),
+      this.withoutDgiReference(ctx.entityId, start, end),
     ]);
 
     return {
@@ -429,7 +430,30 @@ export class DeclarationService {
       creditMonths,
       creditNeedsValidation: creditMonths > CREDIT_VALIDATION_MONTHS,
       excludedPurchases,
+      // Factures sans référence du système de facturation électronique
+      // de la DGI (CGI art. 8 bis et 143, LPF art. L 8 bis).
+      salesWithoutDgiReference: withoutDgi.SALE,
+      purchasesWithoutDgiReference: withoutDgi.PURCHASE,
     };
+  }
+
+  private async withoutDgiReference(entityId: string, start: Date, end: Date) {
+    const groups = await this.prisma.invoice.groupBy({
+      by: ['direction'],
+      where: {
+        entityId,
+        deletedAt: null,
+        type: { in: [InvoiceType.INVOICE, InvoiceType.CREDIT_NOTE] },
+        status: { not: InvoiceStatus.DRAFT },
+        number: { not: null },
+        issuedAt: { gte: start, lt: end },
+        fiscalStamp: null,
+      },
+      _count: { _all: true },
+    });
+    const count = { SALE: 0, PURCHASE: 0 };
+    for (const g of groups) count[g.direction] = g._count._all;
+    return count;
   }
 
   private taxableBase(vatCollected: number): number {

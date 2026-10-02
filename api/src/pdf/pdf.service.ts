@@ -219,7 +219,8 @@ export class PdfService {
       const label =
         line.label +
         (line.description ? `\n${line.description}` : '') +
-        (line.discountPct ? `\nRemise ${this.formatPercent(line.discountPct)}` : '');
+        (line.discountPct ? `\nRemise ${this.formatPercent(line.discountPct)}` : '') +
+        (line.stateBorne ? '\nTVA prise en charge État' : '');
 
       doc.font('Helvetica').fontSize(9);
       const rowHeight = Math.max(
@@ -328,12 +329,24 @@ export class PdfService {
       doc.fontSize(8.5).fillColor(SOFT).text(text, LEFT, doc.y, { width: CONTENT_WIDTH });
     }
 
-    // ---- Emplacement réservé : cachet fiscal / QR code ----
-    // ⚠️ Contenu volontairement non inventé : dépend du format
-    // imposé aux éditeurs homologués par la DGI.
+    // ---- Facturation électronique DGI (CGI art. 8 bis et 143, LPF L 8 bis) ----
     if (invoice.fiscalStamp) {
       doc.moveDown(1);
-      doc.fontSize(8).fillColor(INK).text(`Référence de certification : ${invoice.fiscalStamp}`);
+      doc.fontSize(8).fillColor(INK).text(
+        `Référence DGI (facturation électronique) : ${invoice.fiscalStamp}`,
+        LEFT,
+        doc.y,
+        { width: CONTENT_WIDTH },
+      );
+    } else if (!isDraft && !isPurchase) {
+      doc.moveDown(1);
+      doc.fontSize(7.5).fillColor(SOFT).text(
+        'Document de gestion : la facture officielle est celle émise via le système de ' +
+          'facturation électronique de la DGI (CGI art. 8 bis et 143).',
+        LEFT,
+        doc.y,
+        { width: CONTENT_WIDTH },
+      );
     }
 
     this.footer(doc, `Document émis avec ${BRAND.name}`);

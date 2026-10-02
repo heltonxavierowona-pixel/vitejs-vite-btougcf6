@@ -51,6 +51,7 @@ interface InvoiceDetail {
   balanceDue: number;
   notes: string | null;
   terms: string | null;
+  fiscalStamp: string | null;
   customer?: { name: string; niu: string | null; withholdsVat?: boolean } | null;
   supplier?: { name: string; niu: string | null } | null;
   originalInvoice: { id: string; number: string | null } | null;
@@ -61,6 +62,7 @@ interface InvoiceDetail {
     unitPrice: number;
     discountPct: number;
     vatRate: string;
+    stateBorne?: boolean;
     lineExclVat: number;
     lineVat: number;
   }>;
@@ -206,6 +208,18 @@ function InvoiceDetailView() {
         </Alert>
       )}
 
+      {!isDraft && (
+        <DgiReferencePanel
+          reference={invoice.fiscalStamp}
+          isSale={isSale}
+          canWrite={canWrite(role)}
+          busy={busy}
+          onSave={(reference) =>
+            run(() => api.put(`${base}/dgi-reference`, { reference }))
+          }
+        />
+      )}
+
       {/* Mentions obligatoires (CGI art. 150) et droit à déduction (LPF L 101) */}
       {!isCancelled && !(invoice.partyNiu ?? party?.niu) && (
         <Alert tone="warning">
@@ -276,6 +290,7 @@ function InvoiceDetailView() {
                     <span className="block">{line.label}</span>
                     <span className="block text-xs text-inksoft">
                       {vatRateLabel[line.vatRate] ?? line.vatRate}
+                      {line.stateBorne && ' · prise en charge État'}
                       {line.discountPct > 0 &&
                         ` · remise ${formatPercent(line.discountPct)}`}
                     </span>
@@ -477,6 +492,79 @@ function Line({ label, value }: { label: string; value: number }) {
         {value < 0 ? `−${formatMoney(-value)}` : formatMoney(value)}
       </span>
     </div>
+  );
+}
+
+/**
+ * Référence de la facture sur le système de facturation électronique
+ * de la DGI. Sans elle, la TVA n'est pas déductible chez le client
+ * (CGI art. 143), la charge n'est pas déductible (art. 8 bis) et
+ * l'émetteur s'expose à une amende égale au montant de la facture
+ * (LPF art. L 8 bis).
+ */
+function DgiReferencePanel({
+  reference,
+  isSale,
+  canWrite,
+  busy,
+  onSave,
+}: {
+  reference: string | null;
+  isSale: boolean;
+  canWrite: boolean;
+  busy: boolean;
+  onSave: (reference: string) => void;
+}) {
+  const [editing, setEditing] = useState(!reference);
+  const [value, setValue] = useState(reference ?? '');
+
+  // Après enregistrement, la fiche rechargée apporte la référence.
+  useEffect(() => {
+    setEditing(!reference);
+    setValue(reference ?? '');
+  }, [reference]);
+
+  if (reference && !editing) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[5px] border border-line bg-paper px-4 py-3 text-sm">
+        <span>
+          <span className="text-inksoft">Référence DGI (facturation électronique) : </span>
+          <span className="font-medium tabular">{reference}</span>
+        </span>
+        {canWrite && (
+          <Button variant="ghost" className="h-8 px-3" onClick={() => setEditing(true)}>
+            Modifier
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Alert tone="warning">
+      <p>
+        {isSale
+          ? 'Émettez cette facture sur le système de facturation électronique de la DGI, puis saisissez ici la référence obtenue. Sans elle, votre client ne peut déduire ni la TVA ni la charge (CGI art. 8 bis et 143), et vous risquez une amende égale au montant de la facture (LPF art. L 8 bis).'
+          : 'Saisissez la référence DGI portée par la facture de votre fournisseur. Une facture émise hors du système de facturation électronique de la DGI n’ouvre droit ni à la déduction de la TVA ni à celle de la charge (CGI art. 8 bis et 143).'}
+      </p>
+      {canWrite && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Input
+            className="flex-1 min-w-[12rem]"
+            placeholder="Référence DGI"
+            value={value}
+            maxLength={120}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <Button
+            disabled={busy || value.trim().length < 3}
+            onClick={() => onSave(value.trim())}
+          >
+            Enregistrer
+          </Button>
+        </div>
+      )}
+    </Alert>
   );
 }
 

@@ -19,6 +19,7 @@ import {
   CreateInvoiceDto,
   ListInvoicesQueryDto,
   RecordPaymentDto,
+  SetDgiReferenceDto,
   UpdateInvoiceDto,
 } from './dto/invoice.dto';
 import { AuthGuard } from '../auth/auth.guard';
@@ -74,6 +75,20 @@ export class InvoiceController {
   @Roles(Role.OWNER, Role.ADMIN, Role.ACCOUNTANT)
   validate(@Ctx() ctx: RequestContext, @Param('id') id: string) {
     return this.invoices.validate(ctx, id);
+  }
+
+  /**
+   * Référence de la facture émise sur le système de facturation
+   * électronique de la DGI (CGI art. 8 bis et 143, LPF art. L 8 bis).
+   */
+  @Put(':id/dgi-reference')
+  @Roles(Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATOR)
+  setDgiReference(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() dto: SetDgiReferenceDto,
+  ) {
+    return this.invoices.setDgiReference(ctx, id, dto.reference);
   }
 
   @Post(':id/credit-note')

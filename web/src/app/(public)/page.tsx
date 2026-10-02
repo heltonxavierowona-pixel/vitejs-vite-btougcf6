@@ -7,14 +7,14 @@ import { PUBLIC_PLANS } from '@/lib/pricing';
 import { SessionRedirect } from '@/components/session-redirect';
 
 export const metadata: Metadata = {
-  title: { absolute: `${brand.name} — Factures conformes et déclaration de TVA au Cameroun` },
+  title: { absolute: `${brand.name} — Facturation et déclaration de TVA au Cameroun` },
   description: brand.description,
 };
 
 const FEATURES = [
   {
-    title: 'Factures normalisées',
-    text: 'Numérotation continue, NIU du client, ventilation de la TVA à 19,25 %, montant en toutes lettres et PDF prêt à envoyer.',
+    title: 'Factures complètes',
+    text: 'Toutes les mentions exigées par le CGI (art. 150) : NIU, RCCM, ventilation de la TVA, numérotation continue, montant en toutes lettres. La référence de la facture électronique DGI s’enregistre sur chaque facture.',
   },
   {
     title: 'Déclaration de TVA en un clic',
@@ -52,6 +52,10 @@ const FAQ = [
     a: 'Oui, en un clic depuis la page Abonnement. L’accès reste ouvert jusqu’à la fin du mois payé, et vos factures et déclarations restent consultables ensuite.',
   },
   {
+    q: 'Et la facturation électronique de la DGI ?',
+    a: 'Toute facture doit passer par le système de facturation électronique de la DGI (CGI art. 8 bis et 143). Numera prépare vos factures avec toutes les mentions obligatoires, vous les émettez sur ce système, puis vous enregistrez la référence obtenue sur chaque facture ; Numera vous signale celles qui n’en ont pas.',
+  },
+  {
     q: 'Numera dépose-t-il la déclaration à ma place ?',
     a: 'Numera prépare la déclaration et le récapitulatif. Le dépôt se fait sur le portail de la DGI, puis vous enregistrez la référence de l’accusé dans Numera.',
   },
@@ -70,7 +74,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
           <p className="text-sm font-medium text-primary">{brand.claim}</p>
           <h1 className="mt-3 text-3xl sm:text-5xl font-semibold tracking-tight max-w-3xl leading-tight">
-            Vos factures conformes et votre TVA déclarée avant le 15, sans stress.
+            Vos factures en ordre et votre TVA déclarée avant le 15, sans stress.
           </h1>
           <p className="mt-5 text-lg text-inksoft max-w-2xl">
             {brand.name} est le logiciel de facturation et de déclaration de TVA des PME et des
