@@ -1,0 +1,86 @@
+# ============================================================
+#  Numera — base de données + API + front, en une commande :
+#
+#    cp .env.example .env    # puis remplir JWT_ACCESS_SECRET
+#    docker compose up -d --build
+#
+#  Front : http://localhost:3001   API : http://localhost:3000/api
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-numera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Définissez POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:-numera}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-numera}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-numera}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-numera}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Définissez JWT_ACCESS_SECRET dans .env}
+      CORS_ORIGINS: ${FRONTEND_URL:-http://localhost:3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      PAYMENT_MODE: ${PAYMENT_MODE:-manual}
+      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      WHATSAPP_NOTIFY_PHONE: ${WHATSAPP_NOTIFY_PHONE:-}
+      WHATSAPP_NOTIFY_APIKEY: ${WHATSAPP_NOTIFY_APIKEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      NEERO_ENV: ${NEERO_ENV:-}
+      NEERO_BASE_URL: ${NEERO_BASE_URL:-}
+      NEERO_SECRET_KEY: ${NEERO_SECRET_KEY:-}
+      NEERO_WEBHOOK_SECRET: ${NEERO_WEBHOOK_SECRET:-}
+      NEERO_OPERATOR_ID: ${NEERO_OPERATOR_ID:-}
+      NEERO_MERCHANT_KEY: ${NEERO_MERCHANT_KEY:-}
+      NEERO_STORE_ID: ${NEERO_STORE_ID:-}
+      NEERO_BALANCE_ID: ${NEERO_BALANCE_ID:-}
+      NEERO_DESTINATION_PAYMENT_METHOD_ID: ${NEERO_DESTINATION_PAYMENT_METHOD_ID:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      GRACE_PERIOD_DAYS: ${GRACE_PERIOD_DAYS:-}
+      NOTCHPAY_PUBLIC_KEY: ${NOTCHPAY_PUBLIC_KEY:-}
+      NOTCHPAY_HASH_KEY: ${NOTCHPAY_HASH_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+      FLUTTERWAVE_WEBHOOK_HASH: ${FLUTTERWAVE_WEBHOOK_HASH:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-heltonxavierowona@gmail.com}
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3000/api}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-3001}:3001"
+
+volumes:
+  postgres_data:
