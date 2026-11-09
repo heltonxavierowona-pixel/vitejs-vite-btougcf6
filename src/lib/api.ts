@@ -34,7 +34,7 @@ const demo = {
   profiles: { ...demoProfiles },
   brandVoice: { ...demoBrandVoice },
   automation: {
-    handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: false,
+    handoff_auto: true, min_confidence: 0.7, autopilot_whatsapp: true, autopilot_social: true,
     followups_enabled: true, followup_delays: [2, 5],
   } as Automation,
   templates: [...demoTemplates],
@@ -717,7 +717,31 @@ export async function saveProductSale(productId: string, sale: ProductSale) {
 
 // ---------- Publications Facebook / Instagram ----------
 
-const demoPosts: Post[] = []
+const demoPost = (p: Partial<Post> & Pick<Post, 'id' | 'channel' | 'body'>): Post => ({
+  product_id: 'p2', image_url: '/demo/wax-robe.svg', image_idea: null, status: 'draft', scheduled_at: null,
+  published_at: null, permalink: null, error: null, source: 'ai', comments: 0, created_at: new Date().toISOString(), ...p,
+})
+const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString()
+
+const demoPosts: Post[] = [
+  demoPost({
+    id: 'po1', channel: 'instagram', status: 'scheduled', scheduled_at: inDays(1),
+    body: 'Un mariage, une dot, un baptême ? 💛\n\nVotre tenue en wax, coupée à vos mesures et prête en 7 jours. Robes à partir de 25 000 FCFA, livraison à Douala et Yaoundé.\n\nCommentez INFO et on vous écrit en privé 📩\n\n#wax #pagne #modeafricaine #douala #yaounde #surmesure',
+  }),
+  demoPost({
+    id: 'po2', channel: 'facebook', product_id: 'p1', image_url: '/demo/core-hr.svg', status: 'draft',
+    image_idea: 'Capture du tableau de bord de paie',
+    body: 'Fin de mois = nuits blanches sur la paie ? 😮‍💨\n\nAvec Core HR, vos bulletins sont conformes CNPS et la DIPE se prépare toute seule. Essai gratuit pendant 14 jours, mise en place en une semaine.\n\nCommentez PAIE et on vous montre comment ça marche en privé.',
+  }),
+  demoPost({
+    id: 'po3', channel: 'facebook', status: 'published', published_at: inDays(-2), comments: 23,
+    permalink: 'https://facebook.com/', body: 'Nouvelle collection « Lagune » 🌊\n\nDes bleus profonds, des coupes modernes, et toujours du sur-mesure. Quelle couleur vous ferait craquer : bleu, orange ou vert ?\n\nDites-le en commentaire, on vous envoie les modèles en privé !',
+  }),
+  demoPost({
+    id: 'po4', channel: 'instagram', status: 'published', published_at: inDays(-5), comments: 41,
+    permalink: 'https://instagram.com/', body: 'Avant / après : de simples mètres de pagne à la robe de cérémonie parfaite ✨\n\nConfection en 7 jours, retouches offertes.\n\nCommentez INFO pour recevoir le catalogue 📩\n\n#wax #couture #cameroun #ceremonie',
+  }),
+]
 
 export async function listPosts(): Promise<Post[]> {
   if (!supabase) return [...demoPosts]

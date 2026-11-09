@@ -609,3 +609,6 @@ a.btn { text-decoration: none; display: inline-block; }
 .post-image { margin-bottom: 8px; }
 .posts-grid { margin-top: 16px; }
 .post-card input[type="datetime-local"] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+.sale-modes { gap: 24px; margin: 0 0 8px; }
+/* Cases à cocher et boutons radio : taille naturelle, collés à leur libellé. */
+.form .check input[type=checkbox], .form .check input[type=radio] { width: auto; flex: none; padding: 0; }

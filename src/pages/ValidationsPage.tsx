@@ -84,8 +84,8 @@ export default function ValidationsPage() {
         <p className="eyebrow">Pilote automatique</p>
         <h1>Validations</h1>
         <p className="lead">
-          L'IA converse seule sur WhatsApp, sauf quand il s'agit de prix, remise, devis, contrat ou paiement :
-          sa réponse attend ici votre accord. Vous pouvez la modifier avant de l'envoyer.
+          L'agent converse et vend seul. Quand sa réponse cite un prix, une remise ou un remboursement absents de
+          vos connaissances produit, elle attend ici votre accord. Vous pouvez la modifier avant de l'envoyer.
         </p>
       </header>
 

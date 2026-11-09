@@ -227,7 +227,7 @@ function SaleEditor({ product, onSaved }: { product: Product; onSaved: (sale: Pr
         Quand un prospect est prêt à acheter, l'agent lui envoie le lien d'achat (produit digital) ou le met en contact
         avec le propriétaire sur WhatsApp (produit physique). Vous recevez une alerte « prospect chaud ».
       </p>
-      <div className="form-row two">
+      <div className="actions sale-modes">
         <label className="check">
           <input type="radio" name={`mode-${product.id}`} checked={v.sale_mode === 'digital'} onChange={() => set({ sale_mode: 'digital' })} />
           <span>Produit digital<small className="muted">formation, logiciel, e-book, abonnement…</small></span>

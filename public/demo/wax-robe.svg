@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080">
+  <defs>
+    <pattern id="wax" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="120" height="120" fill="#1f4e9c"/>
+      <circle cx="60" cy="60" r="38" fill="#f2a516"/>
+      <circle cx="60" cy="60" r="22" fill="#d63c2f"/>
+      <circle cx="60" cy="60" r="9" fill="#fff4d6"/>
+      <circle cx="0" cy="0" r="18" fill="#2a9d8f"/><circle cx="120" cy="0" r="18" fill="#2a9d8f"/>
+      <circle cx="0" cy="120" r="18" fill="#2a9d8f"/><circle cx="120" cy="120" r="18" fill="#2a9d8f"/>
+    </pattern>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf3e4"/><stop offset="1" stop-color="#f6dfc0"/></linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="url(#bg)"/>
+  <path d="M470 170 Q540 140 610 170 L640 300 Q700 330 720 420 L800 900 Q540 960 280 900 L360 420 Q380 330 440 300 Z" fill="url(#wax)" stroke="#173a75" stroke-width="6"/>
+  <path d="M470 170 Q540 230 610 170" fill="none" stroke="#173a75" stroke-width="6"/>
+  <rect x="80" y="960" width="920" height="70" rx="35" fill="#173a75"/>
+  <text x="540" y="1007" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#fff" text-anchor="middle">Robe wax sur mesure · prête en 7 jours</text>
+</svg>

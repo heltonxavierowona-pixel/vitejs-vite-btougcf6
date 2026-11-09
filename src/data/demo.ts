@@ -35,13 +35,15 @@ export const demoProducts: Product[] = [
       booking_url: 'https://cal.com/awa/demo-core-hr', call_minutes: 20,
     },
     knowledge: 'Paie conforme CNPS et DIPE. Congés, contrats et dossiers du personnel. Essai gratuit 14 jours. '
-      + 'Mise en place en 1 semaine. Support en français et en anglais.',
+      + 'Mise en place en 1 semaine. Support en français et en anglais. Abonnement : 1 500 FCFA par salarié et par mois.',
+    sale_mode: 'digital', purchase_url: 'https://exemple.com/core-hr/essai', image_url: '/demo/core-hr.svg',
   },
   {
     id: 'p2', ...boutique, analysis: analyzeWithRules(boutique), analyzed_at: ago(30),
     closing: { presentation_label: 'Catalogue Wax & Co', presentation_url: 'https://exemple.com/catalogue-wax.pdf' },
     knowledge: 'Robes et ensembles en pagne wax sur mesure. Délai de confection : 7 jours. '
       + 'Livraison à Douala et Yaoundé : 2 000 FCFA. Robe à partir de 25 000 FCFA. Paiement Mobile Money à la commande.',
+    sale_mode: 'physique', owner_name: 'Awa', owner_whatsapp: '+237 699 00 00 00', image_url: '/demo/wax-robe.svg',
   },
 ]
 
@@ -54,12 +56,22 @@ export const demoAccounts: ChannelAccount[] = [
 export const demoConversations: Conversation[] = [
   {
     id: 'c1', prospect_id: 'r7', channel: 'whatsapp', prospect_name: 'Mireille N.',
-    last_message_preview: 'Vous livrez à Bonamoussadi avant samedi ?', last_message_at: ago(4),
+    last_message_preview: 'Et si j\'en prends deux, vous faites un geste ?', last_message_at: ago(4),
     last_inbound_at: ago(4), unread_count: 2, ai_paused: false, ai_paused_reason: null,
   },
   {
     id: 'c2', prospect_id: 'r8', channel: 'instagram', prospect_name: 'estelle_design',
     last_message_preview: 'INFO', last_message_at: ago(55), last_inbound_at: ago(55), unread_count: 1,
+  },
+  {
+    id: 'c4', prospect_id: 'r11', channel: 'instagram', prospect_name: 'grace.kamga',
+    last_message_preview: 'Parfait, je lui écris tout de suite 🙏', last_message_at: ago(25),
+    last_inbound_at: ago(25), unread_count: 0, ai_paused: true, ai_paused_reason: 'converted',
+  },
+  {
+    id: 'c5', prospect_id: 'r12', channel: 'facebook', prospect_name: 'Joël Ndzana',
+    last_message_preview: 'Super, je lance l\'essai cette semaine.', last_message_at: ago(90),
+    last_inbound_at: ago(90), unread_count: 0, ai_paused: true, ai_paused_reason: 'converted',
   },
   {
     id: 'c3', prospect_id: 'r6', channel: 'facebook', prospect_name: 'Paul Mbarga',
@@ -72,9 +84,21 @@ export const demoMessages: Message[] = [
   { id: 'm1', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(20), body: 'Bonsoir, j\'ai vu la robe bleue sur votre page. Elle existe en taille 42 ?' },
   { id: 'm2', conversation_id: 'c1', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(18), body: 'Bonsoir Mireille ! Oui, la robe bleue se fait sur mesure, donc le 42 ne pose aucun souci. C\'est pour une occasion particulière ?' },
   { id: 'm3', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(6), body: 'Pour un mariage le 12. C\'est combien ?' },
-  { id: 'm4', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(4), body: 'Vous livrez à Bonamoussadi avant samedi ?' },
-  { id: 'm9', conversation_id: 'c1', direction: 'outbound', status: 'pending_approval', ai_generated: true, sent_at: ago(3), body: 'La robe bleue sur mesure est à 25 000 FCFA, et la livraison à Bonamoussadi coûte 2 000 FCFA. Elle peut être prête jeudi, donc avant samedi 😊 On la lance ?' },
-  { id: 'm5', conversation_id: 'c2', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(55), body: 'INFO' },
+  { id: 'm3b', conversation_id: 'c1', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(5), body: 'La robe bleue sur mesure est à 25 000 FCFA, livraison à Douala 2 000 FCFA. Elle peut être prête jeudi 😊' },
+  { id: 'm4', conversation_id: 'c1', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(4), body: 'Et si j\'en prends deux pour ma sœur aussi, vous faites un geste ?' },
+  { id: 'm9', conversation_id: 'c1', direction: 'outbound', status: 'pending_approval', ai_generated: true, sent_at: ago(3), body: 'Avec plaisir ! Pour deux robes commandées ensemble, je peux vous proposer 10 % de remise, soit 45 000 FCFA au lieu de 50 000. Livraison à Bonamoussadi jeudi 😊 On les lance ?' },
+  { id: 'm5', conversation_id: 'c2', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(56), body: 'INFO' },
+  { id: 'm5b', conversation_id: 'c2', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(55), body: 'Merci pour votre commentaire sous notre robe bleue ! 👗 Toutes nos tenues en wax sont faites sur mesure en 7 jours, à partir de 25 000 FCFA. C\'est pour une occasion en particulier ?' },
+  { id: 'm10', conversation_id: 'c4', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(70), body: 'Bonjour, je veux un ensemble wax pour la dot de ma sœur, c\'est possible en 10 jours ?' },
+  { id: 'm11', conversation_id: 'c4', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(69), body: 'Bonjour Grâce ! Oui, la confection prend 7 jours, donc c\'est faisable 😊 Vous pensez à une robe ou à un ensemble jupe + haut ?' },
+  { id: 'm12', conversation_id: 'c4', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(40), body: 'Un ensemble jupe + haut, taille 40. Je le prends, comment on fait ?' },
+  { id: 'm13', conversation_id: 'c4', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(38), body: 'Excellent choix ! Pour les mesures, le paiement Mobile Money et la livraison, Awa vous attend sur WhatsApp :\nhttps://wa.me/237699000000?text=Bonjour%20Awa%2C%20je%20souhaite%20commander' },
+  { id: 'm14', conversation_id: 'c4', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(25), body: 'Parfait, je lui écris tout de suite 🙏' },
+  { id: 'm15', conversation_id: 'c5', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(130), body: 'Bonjour, votre logiciel gère aussi la DIPE ?' },
+  { id: 'm16', conversation_id: 'c5', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(128), body: 'Bonjour Joël ! Oui, Core HR calcule la paie conforme CNPS et prépare la DIPE automatiquement. Combien de salariés gérez-vous ?' },
+  { id: 'm17', conversation_id: 'c5', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(110), body: '35 salariés. C\'est combien ?' },
+  { id: 'm18', conversation_id: 'c5', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(108), body: 'Pour 35 salariés, l\'abonnement revient à 52 500 FCFA par mois (1 500 FCFA par salarié), avec 14 jours d\'essai gratuit. Vous pouvez démarrer ici :\nhttps://exemple.com/core-hr/essai' },
+  { id: 'm19', conversation_id: 'c5', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(90), body: 'Super, je lance l\'essai cette semaine.' },
   { id: 'm6', conversation_id: 'c3', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(60 * 31), body: 'Bonjour, vous avez des ensembles pour couple ?' },
   { id: 'm7', conversation_id: 'c3', direction: 'outbound', status: 'read', ai_generated: true, sent_at: ago(60 * 30.5), body: 'Bonjour Paul ! Oui, nous faisons des ensembles assortis homme/femme. Je vous envoie quelques modèles ?' },
   { id: 'm8', conversation_id: 'c3', direction: 'inbound', status: 'received', ai_generated: false, sent_at: ago(60 * 30), body: 'Merci, je regarde avec ma femme.' },
@@ -87,15 +111,21 @@ const prospect = (p: Partial<Prospect> & Pick<Prospect, 'id' | 'full_name'>): Pr
 })
 
 export const demoProspects: Prospect[] = [
-  prospect({ id: 'r1', full_name: 'Carine Ebongue', job_title: 'Directrice des Ressources Humaines', company: 'Brasseries du Littoral', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 88, fit_reasons: ['DRH d\'une entreprise de 300+ salariés', 'Basée à Douala'], profile_url: 'https://www.linkedin.com/in/carine-ebongue' }),
-  prospect({ id: 'r2', full_name: 'Serge Tchoupo', job_title: 'Directeur Général', company: 'Tchoupo Logistique', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 76, fit_reasons: ['Dirigeant de PME de 45 salariés', 'Pas de service RH dédié'], profile_url: 'https://www.linkedin.com/in/serge-tchoupo' }),
-  prospect({ id: 'r3', full_name: 'Aïcha Diallo', job_title: 'Responsable paie', company: 'Sonatel Services', country: 'Sénégal', fit_score: 64, fit_reasons: ['Utilisatrice directe du module paie', 'Influence la décision'], profile_url: 'https://www.linkedin.com/in/aicha-diallo' }),
-  prospect({ id: 'r4', full_name: 'Marc Kouassi', job_title: 'Consultant RH indépendant', country: 'Côte d\'Ivoire', fit_score: 41, fit_reasons: ['Prescripteur possible', 'Pas acheteur direct'], profile_url: 'https://www.linkedin.com/in/marc-kouassi' }),
-  prospect({ id: 'r5', full_name: 'Nadine Fotso', job_title: 'DRH', company: 'Hôtel Akwa Palace', stage: 'contacted', fit_score: 82, fit_reasons: ['DRH hôtellerie, forte rotation du personnel'], contacted_at: ago(60 * 20), profile_url: 'https://www.linkedin.com/in/nadine-fotso' }),
+  prospect({ id: 'r1', full_name: 'Carine Ebongue', job_title: 'Directrice des Ressources Humaines', company: 'Brasseries du Littoral', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 88, fit_reasons: ['DRH d\'une entreprise de 300+ salariés', 'Basée à Douala'] }),
+  prospect({ id: 'r2', full_name: 'Serge Tchoupo', job_title: 'Directeur Général', company: 'Tchoupo Logistique', segment_label: 'DRH, responsables RH et dirigeants de PME', fit_score: 76, fit_reasons: ['Dirigeant de PME de 45 salariés', 'Pas de service RH dédié'] }),
+  prospect({ id: 'r3', full_name: 'Aïcha Diallo', job_title: 'Responsable paie', company: 'Teranga Services', country: 'Sénégal', fit_score: 64, fit_reasons: ['Utilisatrice directe du module paie', 'Influence la décision'] }),
+  prospect({ id: 'r4', full_name: 'Marc Kouassi', job_title: 'Consultant RH indépendant', country: 'Côte d\'Ivoire', fit_score: 41, fit_reasons: ['Prescripteur possible', 'Pas acheteur direct'] }),
+  prospect({ id: 'r5', full_name: 'Nadine Fotso', job_title: 'DRH', company: 'Hôtel Les Palmiers', stage: 'contacted', fit_score: 82, fit_reasons: ['DRH hôtellerie, forte rotation du personnel'], contacted_at: ago(60 * 20) }),
   prospect({ id: 'r6', full_name: 'Paul Mbarga', product_id: 'p2', stage: 'replied', best_channel: null, source: 'facebook_inbound', fit_score: null }),
   prospect({ id: 'r7', full_name: 'Mireille N.', product_id: 'p2', stage: 'whatsapp', best_channel: null, source: 'lien:Bio Instagram', fit_score: null }),
   prospect({ id: 'r9', full_name: 'Aline Mballa', job_title: 'DRH', company: 'Groupe Mballa BTP', stage: 'hot', fit_score: 84, best_channel: null, source: 'lien:Flyer salon RH Douala', closing_step: 'presentation_sent', followups_sent: 0, next_followup_at: ago(-60 * 24) }),
-  prospect({ id: 'r10', full_name: 'Brice Nana', job_title: 'Directeur administratif', company: 'Nana Distribution', stage: 'interested', fit_score: 71, fit_reasons: ['Gère la paie de 60 salariés'], followups_sent: 1, followup_due: true, last_followup_at: ago(10), next_followup_at: ago(-60 * 24 * 5), profile_url: 'https://www.linkedin.com/in/brice-nana' }),
+  prospect({ id: 'r10', full_name: 'Brice Nana', job_title: 'Directeur administratif', company: 'Nana Distribution', stage: 'interested', fit_score: 71, fit_reasons: ['Gère la paie de 60 salariés'], followups_sent: 1, followup_due: true, last_followup_at: ago(10), next_followup_at: ago(-60 * 24 * 5) }),
+  prospect({ id: 'r11', full_name: 'grace.kamga', product_id: 'p2', stage: 'hot', best_channel: null, source: 'instagram_comment', fit_score: null }),
+  prospect({ id: 'r12', full_name: 'Joël Ndzana', job_title: 'Gérant', company: 'Ndzana Transports', stage: 'hot', best_channel: null, source: 'facebook_inbound', fit_score: 79 }),
+  prospect({ id: 'r13', full_name: 'Sandrine Owono', product_id: 'p2', stage: 'won', best_channel: null, source: 'facebook_comment', fit_score: null }),
+  prospect({ id: 'r14', full_name: 'Hervé Fouda', job_title: 'Directeur financier', company: 'Fouda & Fils SARL', stage: 'won', best_channel: null, source: 'facebook_inbound', fit_score: 81 }),
+  prospect({ id: 'r15', full_name: 'Linda Essomba', product_id: 'p2', stage: 'interested', best_channel: null, source: 'instagram_comment', fit_score: null }),
+  prospect({ id: 'r16', full_name: 'Christian Bella', product_id: 'p2', stage: 'replied', best_channel: null, source: 'facebook_comment', fit_score: null }),
   prospect({ id: 'r8', full_name: 'estelle_design', product_id: 'p2', stage: 'contacted', best_channel: null, source: 'instagram_comment', fit_score: null }),
 ]
 
@@ -139,12 +169,12 @@ export const demoProfiles: Record<string, RelationalProfile> = {
 export const demoApprovals: Approval[] = [
   {
     id: 'ap1', message_id: 'm9', conversation_id: 'c1', prospect_id: 'r7', prospect_name: 'Mireille N.',
-    channel: 'whatsapp', topics: ['prix'], created_at: ago(3),
-    proposed_body: 'La robe bleue sur mesure est à 25 000 FCFA, et la livraison à Bonamoussadi coûte 2 000 FCFA. Elle peut être prête jeudi, donc avant samedi 😊 On la lance ?',
+    channel: 'whatsapp', topics: ['remise'], created_at: ago(3),
+    proposed_body: 'Avec plaisir ! Pour deux robes commandées ensemble, je peux vous proposer 10 % de remise, soit 45 000 FCFA au lieu de 50 000. Livraison à Bonamoussadi jeudi 😊 On les lance ?',
     expires_at: new Date(Date.now() + (24 * 60 - 4) * 60_000).toISOString(),
     context: [
       { from: 'prospect', text: 'Pour un mariage le 12. C\'est combien ?' },
-      { from: 'prospect', text: 'Vous livrez à Bonamoussadi avant samedi ?' },
+      { from: 'prospect', text: 'Et si j\'en prends deux pour ma sœur aussi, vous faites un geste ?' },
     ],
   },
 ]

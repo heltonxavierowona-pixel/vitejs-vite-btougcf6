@@ -119,7 +119,7 @@ function AutomationForm() {
         <input type="checkbox" checked={a.autopilot_whatsapp} onChange={(e) => update({ autopilot_whatsapp: e.target.checked })} />
         <span>
           Pilote automatique sur WhatsApp
-          <small className="muted">L'IA répond seule, en texte. Prix, remise, devis, contrat et paiement passent par « Validations ».</small>
+          <small className="muted">L'IA répond seule, en texte. Seuls un prix, une remise ou un remboursement absents de vos connaissances produit passent par « Validations ».</small>
         </span>
       </label>
       <label className="check">
