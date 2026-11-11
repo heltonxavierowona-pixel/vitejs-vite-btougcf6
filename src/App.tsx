@@ -123,7 +123,7 @@ function usePaymentQueue(enabled: boolean) {
 
 function BillingBanner({ state }: { state: { e: Entitlements; trialDays: number | null } | null }) {
   const { pathname } = useLocation()
-  if (!state || pathname === '/abonnement' || pathname === '/admin') return null
+  if (!state || state.e.admin_unlimited || pathname === '/abonnement' || pathname === '/admin') return null
   const { e: ent, trialDays: days } = state
   let text: string | null = null
   if (ent.status === 'pending_payment') text = ent.has_access

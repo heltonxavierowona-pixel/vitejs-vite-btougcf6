@@ -638,7 +638,7 @@ export function normalizePosts(raw: Record<string, unknown>, channels: ('faceboo
     }))
     .filter((p) => p.body && channels.includes(p.channel))
     .map((p) => ({ ...p, body: p.body.slice(0, max[p.channel]) }))
-    .slice(0, 12)
+    .slice(0, 20)
 }
 
 // ---------- Réponse privée à un commentaire ----------

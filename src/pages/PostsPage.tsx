@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import ChannelBadge from '../components/ChannelBadge'
 import {
-  createPost, deletePost, generatePosts, listAccounts, listPosts, listProducts, publishPostNow, updatePost, uploadPostImage,
+  createPost, deletePost, generatePosts, isPlatformAdmin, listAccounts, listPosts, listProducts, publishPostNow, updatePost, uploadPostImage,
 } from '../lib/api'
 import type { ChannelAccount, Post, PostStatus, Product } from '../lib/types'
 
@@ -37,8 +37,8 @@ const toLocal = (iso: string | null) => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 
-function Generator({ products, connected, onCreated }: {
-  products: Product[]; connected: Net[]; onCreated: (posts: Post[]) => void
+function Generator({ products, connected, admin, onCreated }: {
+  products: Product[]; connected: Net[]; admin: boolean; onCreated: (posts: Post[]) => void
 }) {
   const [productId, setProductId] = useState(products[0]?.id ?? '')
   const [nets, setNets] = useState<Net[]>(connected.length ? connected : ['facebook', 'instagram'])
@@ -90,9 +90,7 @@ function Generator({ products, connected, onCreated }: {
         <label>
           Nombre par réseau
           <select value={count} onChange={(e) => setCount(Number(e.target.value))}>
-            <option value={1}>1</option>
-            <option value={2}>2</option>
-            <option value={3}>3</option>
+            {Array.from({ length: admin ? 10 : 3 }, (_, i) => i + 1).map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </label>
       </div>
@@ -238,10 +236,12 @@ export default function PostsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [accounts, setAccounts] = useState<ChannelAccount[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [admin, setAdmin] = useState(false)
 
   const refresh = useCallback(() => listPosts().then(setPosts).catch(() => {}), [])
 
   useEffect(() => {
+    isPlatformAdmin().then(setAdmin).catch(() => {})
     Promise.all([listPosts(), listProducts(), listAccounts()]).then(([po, pr, ac]) => {
       setPosts(po)
       setProducts(pr)
@@ -281,7 +281,7 @@ export default function PostsPage() {
       )}
 
       {products.length > 0 && (
-        <Generator products={products} connected={connected} onCreated={(created) => setPosts((l) => [...created, ...l])} />
+        <Generator products={products} connected={connected} admin={admin} onCreated={(created) => setPosts((l) => [...created, ...l])} />
       )}
 
       <div className="actions">

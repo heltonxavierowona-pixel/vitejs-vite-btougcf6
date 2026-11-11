@@ -282,6 +282,7 @@ export interface Entitlements {
   current_period_end: string | null
   cancel_at_period_end: boolean
   has_access: boolean
+  admin_unlimited?: boolean
   limits: Plan['limits']
   usage: Plan['limits']
 }

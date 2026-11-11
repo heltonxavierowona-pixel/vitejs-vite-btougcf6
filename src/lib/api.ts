@@ -254,7 +254,8 @@ export async function setOutreachProfile(profile: OutreachProfile) {
 // File du jour : meilleurs prospects « à contacter », dans la limite du rythme autorisé.
 export async function outreachQueue(productId: string, channel: ChannelId): Promise<{ queue: Prospect[]; limit: number; doneToday: number }> {
   const profile = await getOutreachProfile()
-  const limit = DAILY_LIMITS[profile][channel] ?? 0
+  // Compte administrateur : pas de quota du jour.
+  const limit = supabase && await isPlatformAdmin() ? 500 : DAILY_LIMITS[profile][channel] ?? 0
   if (!supabase) {
     const doneToday = demo.prospects.filter((p) => p.best_channel === channel && isToday(p.contacted_at)).length
     const queue = demo.prospects

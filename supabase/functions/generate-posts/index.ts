@@ -1,4 +1,4 @@
-// POST { product_id, channels?: ('facebook'|'instagram')[], count?: 1..3, brief? }
+// POST { product_id, channels?: ('facebook'|'instagram')[], count?: 1..3 (1..10 admin), brief? }
 // L'IA rédige des publications prêtes à publier pour un produit ; enregistrées en brouillon
 // dans posts (image du produit par défaut). Déploiement : verify_jwt = true.
 import { handler, HttpError, json, requireUser, rest } from '../_shared/supabase.ts'
@@ -19,7 +19,9 @@ Deno.serve(handler(async (req) => {
   const channels = (wanted?.length ? wanted : ['facebook', 'instagram'])
     .filter((c): c is 'facebook' | 'instagram' => c === 'facebook' || c === 'instagram')
   if (!channels.length) throw new HttpError(400, 'Choisissez Facebook et/ou Instagram')
-  const n = Math.max(1, Math.min(3, Math.round(Number(count) || 2)))
+  // Compte administrateur : jusqu'à 10 publications par réseau (3 sinon).
+  const admin = await rest<boolean>('rpc/org_is_platform_admin', { method: 'POST', body: { p_org: orgId } }).catch(() => false)
+  const n = Math.max(1, Math.min(admin === true ? 10 : 3, Math.round(Number(count) || 2)))
 
   // Lecture avec le jeton de l'utilisateur : RLS garantit que le produit lui appartient.
   const [p] = await rest<Product[]>(
@@ -41,7 +43,7 @@ Deno.serve(handler(async (req) => {
     model: MODELS.posts,
     system: buildPostsSystem(ctx, channels, n),
     user: buildPostsUser(ctx, brief?.slice(0, 500)),
-    maxTokens: Math.min(3000, 350 + 450 * n * channels.length),
+    maxTokens: Math.min(admin === true ? 9000 : 3000, 350 + 450 * n * channels.length),
     temperature: 0.8,
     orgId,
     feature: 'generate_posts',

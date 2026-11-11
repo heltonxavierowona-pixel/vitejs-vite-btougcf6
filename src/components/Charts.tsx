@@ -210,6 +210,16 @@ export function LineChart({ points, series }: { points: { label: string; values:
 // Jauge de consommation : le remplissage porte l'état (normal → proche de la limite → atteinte),
 // la piste est un ton clair de la même couleur ; libellé + valeur toujours écrits (jamais la couleur seule).
 export function Meter({ label, used, limit }: { label: string; used: number; limit: number }) {
+  if (limit >= 999_999) {
+    return (
+      <div className="meter meter-ok">
+        <div className="meter-head">
+          <span>{label}</span>
+          <span className="meter-value">{fmt(used)} · illimité</span>
+        </div>
+      </div>
+    )
+  }
   const ratio = limit > 0 ? Math.min(1, used / limit) : 0
   const level = ratio >= 1 ? 'full' : ratio >= 0.8 ? 'high' : 'ok'
   return (

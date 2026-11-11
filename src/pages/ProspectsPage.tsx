@@ -117,7 +117,9 @@ function QueueTab({ product }: { product: Product }) {
           <span><strong>{data.doneToday} / {data.limit}</strong> contactés aujourd'hui sur {channelInfo(channel).name}</span>
           <div className="bar"><div style={{ width: `${Math.min(100, (data.doneToday / Math.max(1, data.limit)) * 100)}%`, background: channelInfo(channel).color }} /></div>
           <span className="muted small">
-            Limite volontairement prudente pour protéger votre compte. L'IA rédigera le message personnalisé à la Partie 3.
+            {data.limit >= 500
+              ? 'Compte administrateur : aucun quota du jour. Allez-y progressivement pour ne pas alerter LinkedIn ou X.'
+              : 'Limite volontairement prudente pour protéger votre compte. L\'IA rédigera le message personnalisé à la Partie 3.'}
           </span>
         </div>
       )}
