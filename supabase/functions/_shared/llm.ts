@@ -17,11 +17,15 @@ export const MODELS = {
   posts: env('OPENROUTER_POSTS_MODEL') ?? write,
 }
 
-// Modèles gratuits de secours (crédit épuisé, modèle saturé ou en panne). OpenRouter essaie la
-// liste dans l'ordre (paramètre « models »).
-const FREE_MODELS = (env('OPENROUTER_FALLBACK_MODELS')
-  ?? 'google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-26b-a4b-it:free')
-  .split(',').map((m) => m.trim()).filter(Boolean)
+// Modèles gratuits de secours (crédit épuisé, modèle saturé ou en panne) : la liste du secret
+// OPENROUTER_FALLBACK_MODELS, complétée par des valeurs sûres ; « openrouter/free » choisit
+// lui-même un modèle gratuit disponible.
+const isFree = (m: string) => m.endsWith(':free') || m === 'openrouter/free'
+const FREE_MODELS = [...new Set([
+  ...(env('OPENROUTER_FALLBACK_MODELS') ?? '').split(',').map((m) => m.trim()),
+  'google/gemma-4-31b-it:free', 'google/gemma-4-26b-a4b-it:free', 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'nvidia/nemotron-3.5-lightning:free', 'openrouter/free',
+])].filter(isFree)
 
 const RETRYABLE = (status: number) => status === 402 || status === 408 || status === 429 || status >= 500
 
@@ -74,10 +78,12 @@ export async function chatJSON(opts: {
     const afford = Number((await res.text()).match(/can only afford (\d+)/)?.[1] ?? 0)
     if (afford >= 400) res = await send([opts.model], afford - 50)
   }
-  // Crédit épuisé, modèle saturé, en panne ou réponse illisible : modèles gratuits de secours,
-  // jusqu'à 3 essais espacés (le modèle fautif passe en dernier).
-  let free = [...new Set([opts.model, ...FREE_MODELS])].filter((m) => m.endsWith(':free'))
-  for (let i = 0; i < 4; i++) {
+  // Crédit épuisé, modèle saturé, en panne ou réponse illisible : modèles gratuits de secours.
+  // Jusqu'à 6 essais sur ~70 s ; chaque essai commence par un autre modèle (les modèles gratuits
+  // sont souvent saturés quelques secondes).
+  let free = [...new Set([opts.model, ...FREE_MODELS])].filter(isFree)
+  const WAITS = [0, 3, 6, 12, 20, 30]
+  for (let i = 0; i <= WAITS.length; i++) {
     if (res.ok) {
       const completion = await res.json().catch(() => ({}))
       const raw: string = completion.choices?.[0]?.message?.content ?? ''
@@ -94,13 +100,14 @@ export async function chatJSON(opts: {
         return parsed
       }
       console.error('openrouter illisible', completion.model, JSON.stringify(raw).slice(0, 300))
-      free = [...free.filter((m) => m !== completion.model), ...free.filter((m) => m === completion.model)]
     } else {
-      if (!RETRYABLE(res.status)) break
+      // 400/404 : modèle retiré du catalogue → on passe au suivant ; autre erreur définitive : on arrête.
+      if (!RETRYABLE(res.status) && res.status !== 400 && res.status !== 404) break
       console.error('openrouter', res.status, (await res.text().catch(() => '')).slice(0, 200))
     }
-    if (i === 3 || !free.length) break
-    if (i) await new Promise((r) => setTimeout(r, i * 6000))
+    if (i === WAITS.length || !free.length) break
+    if (WAITS[i]) await new Promise((r) => setTimeout(r, WAITS[i] * 1000))
+    if (i) free = [...free.slice(1), free[0]] // rotation : un autre modèle en tête
     res = await send(free.slice(0, 3), Math.max(opts.maxTokens, 1200))
   }
   if (res.status === 402) {
