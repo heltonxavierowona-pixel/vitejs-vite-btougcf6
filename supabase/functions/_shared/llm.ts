@@ -5,11 +5,16 @@ import { HttpError, rest } from './supabase.ts'
 // Nom de modèle saisi dans les secrets : espaces et point final (faute de frappe fréquente) retirés.
 const env = (name: string) => Deno.env.get(name)?.trim().replace(/\.+$/, '') || undefined
 
+const fast = env('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-5.5'
+const write = env('OPENROUTER_WRITE_MODEL') ?? 'anthropic/claude-sonnet-5.5'
+
 export const MODELS = {
   // Tri, extraction, profils : rapide et économique.
-  fast: env('OPENROUTER_MODEL') ?? 'anthropic/claude-haiku-4.5',
+  fast,
   // Rédaction des messages : qualité d'écriture.
-  write: env('OPENROUTER_WRITE_MODEL') ?? 'anthropic/claude-sonnet-4.5',
+  write,
+  // Création des publications : peut recevoir un modèle plus créatif, seul (peu d'appels, coût faible).
+  posts: env('OPENROUTER_POSTS_MODEL') ?? write,
 }
 
 // Modèles gratuits de secours (crédit épuisé, modèle saturé ou en panne). OpenRouter essaie la

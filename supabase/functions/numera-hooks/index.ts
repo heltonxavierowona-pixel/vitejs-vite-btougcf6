@@ -189,6 +189,28 @@ interface CommentHook {
   comment: string; from_name: string | null
 }
 
+// Texte de la publication commentée : celle créée dans Numera si elle existe, sinon lue sur
+// Facebook / Instagram (n'importe quelle publication de la Page ou du compte). Vide si indisponible.
+async function postText(commentId: string, channel: Channel, token: string): Promise<string> {
+  const [ev] = await rest<{ post_id: string | null; organization_id: string }[]>(
+    `comment_events?comment_id=eq.${encodeURIComponent(commentId)}&select=post_id,organization_id`,
+  )
+  const postId = ev?.post_id
+  if (!postId) return ''
+  const [own] = await rest<{ body: string }[]>(
+    `posts?organization_id=eq.${ev.organization_id}&external_id=eq.${encodeURIComponent(postId)}&select=body&limit=1`,
+  )
+  if (own?.body) return own.body.slice(0, 2000)
+  const r = channel === 'instagram'
+    ? await meta(`${postId}?fields=caption`, token, undefined, 'GET')
+    : await meta(`${postId}?fields=message,story`, token, undefined, 'GET')
+  if (!r.ok) {
+    console.error('post_text', metaError(r.data))
+    return ''
+  }
+  return String(r.data.caption ?? r.data.message ?? r.data.story ?? '').slice(0, 2000)
+}
+
 // Commentaire sans mot-clé : premier message privé rédigé par l'agent commercial.
 async function replyToComment(h: CommentHook) {
   const [account] = await rest<Account[]>(`channel_accounts?id=eq.${h.channel_account_id}&select=${ACCOUNT_FIELDS}`)
@@ -199,10 +221,18 @@ async function replyToComment(h: CommentHook) {
   const ctx = await rest<AiContext & { organization_id: string }>('rpc/prospect_ai_context', {
     method: 'POST', body: { p_prospect: h.prospect_id, p_conversation: h.conversation_id },
   })
+  const publication = await postText(h.comment_id, channel, token)
+  // Gardé sur la fiche : les messages suivants de la conversation savent d'où vient le prospect.
+  await rest(`prospects?id=eq.${h.prospect_id}&profile_text=is.null`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { profile_text: `A commenté la publication « ${publication.slice(0, 600) || 'texte indisponible'} » : « ${h.comment.slice(0, 300)} »` },
+  }).catch((e) => console.error('profile_text', e))
   const raw = await chatJSON({
     model: MODELS.write,
     system: buildCommentSystem(ctx, channel),
-    user: JSON.stringify({ ...JSON.parse(buildDraftUser(ctx, 'reply')), commentaire: h.comment, auteur: h.from_name }),
+    user: JSON.stringify({
+      ...JSON.parse(buildDraftUser(ctx, 'reply')), publication, commentaire: h.comment, auteur: h.from_name,
+    }),
     maxTokens: 700,
     temperature: 0.5,
     orgId: ctx.organization_id,

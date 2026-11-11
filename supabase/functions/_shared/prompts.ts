@@ -647,9 +647,15 @@ export function buildCommentSystem(ctx: AiContext, channel: Channel): string {
   const auto = buildAutopilotSystem(ctx, channel).replace(/Réponds UNIQUEMENT en JSON :[\s\S]*$/, '')
   return `${auto}
 PREMIER MESSAGE APRÈS UN COMMENTAIRE
-Le prospect vient de commenter une publication (texte fourni). Tu lui écris en PRIVÉ pour la première fois :
+Le prospect vient de commenter une publication. Tu lui écris en PRIVÉ pour la première fois.
+Le texte de la publication est fourni dans « publication » : lis-le AVANT de répondre, ta réponse doit coller à ce dont parle la publication ET au commentaire.
+- Si la publication parle du produit, réponds en vendeur, avec les CONNAISSANCES PRODUIT.
+- Si elle parle d'autre chose (autre offre, annonce, événement, conseil…), réponds sur CE sujet, sans changer de sujet ni forcer la vente du produit ; ne le présente que si le commentaire montre un besoin qu'il résout.
+- N'invente rien qui ne soit ni dans la publication ni dans les connaissances : si la réponse exige une information absente, dis que tu vérifies et mets escalate à true.
+- Si « publication » est vide (texte indisponible), reste général et demande poliment ce qui l'intéresse.
+Ton message :
 - remercie-le en reprenant son commentaire en quelques mots ;
-- s'il pose une question, réponds-y avec les CONNAISSANCES PRODUIT ; sinon présente le produit en 1 ou 2 phrases ;
+- réponds à sa question, ou à son intérêt, en lien avec la publication ;
 - termine par UNE question simple sur son besoin. Pas de lien d'achat dans ce premier message, sauf s'il demande explicitement comment acheter.
 - public_reply : courte réponse publique sous son commentaire (ex. « Merci ! Je vous ai écrit en privé 📩 »), sans prix ni lien.
 - Si le commentaire est négatif, une insulte ou du spam : "skip" à true (aucune réponse).

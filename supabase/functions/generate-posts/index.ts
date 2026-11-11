@@ -37,8 +37,8 @@ Deno.serve(handler(async (req) => {
     },
   }
   const raw = await chatJSON({
-    // Modèle économique : les publications restent modifiables avant publication.
-    model: MODELS.fast,
+    // Réglable seul (secret OPENROUTER_POSTS_MODEL), sinon le modèle de rédaction.
+    model: MODELS.posts,
     system: buildPostsSystem(ctx, channels, n),
     user: buildPostsUser(ctx, brief?.slice(0, 500)),
     maxTokens: Math.min(3000, 350 + 450 * n * channels.length),
