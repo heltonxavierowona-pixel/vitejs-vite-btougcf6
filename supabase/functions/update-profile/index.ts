@@ -31,6 +31,7 @@ Deno.serve(handler(async (req) => {
     temperature: 0.1,
     orgId: ctx.organization_id,
     feature: 'profile',
+    quick: true,
   })
   const profile = normalizeProfile(raw)
 

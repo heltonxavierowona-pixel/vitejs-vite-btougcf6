@@ -41,7 +41,7 @@ Deno.serve(handler(async (req) => {
   const intent = normalizeIntent(
     await chatJSON({
       model: MODELS.fast, system: INTENT_SYSTEM, user: buildIntentUser(ctx),
-      maxTokens: 300, temperature: 0, orgId: ctx.organization_id, feature: 'intent',
+      maxTokens: 300, temperature: 0, orgId: ctx.organization_id, feature: 'intent', quick: true,
     }),
     msg.body,
   )
@@ -71,7 +71,7 @@ Deno.serve(handler(async (req) => {
       model: MODELS.write,
       system: buildDraftSystem(ctx, result.channel, 'handoff'),
       user: buildDraftUser(ctx, 'handoff'),
-      maxTokens: 800, temperature: 0.6, orgId: result.organization_id, feature: 'handoff',
+      maxTokens: 800, temperature: 0.6, orgId: result.organization_id, feature: 'handoff', quick: true,
     }),
     result.channel,
     'handoff',

@@ -37,6 +37,8 @@ export async function chatJSON(opts: {
   temperature?: number
   orgId: string
   feature: string
+  // Tâche de fond (intention, profil) : essais plus courts pour ne pas retarder la réponse au client.
+  quick?: boolean
 }): Promise<Record<string, unknown>> {
   // Abonnement actif et quota mensuel d'actions IA de la formule non dépassé.
   const quotaOk = await rest<boolean>('rpc/ai_quota_ok', { method: 'POST', body: { p_org: opts.orgId } })
@@ -82,7 +84,7 @@ export async function chatJSON(opts: {
   // Jusqu'à 6 essais sur ~70 s ; chaque essai commence par un autre modèle (les modèles gratuits
   // sont souvent saturés quelques secondes).
   let free = [...new Set([opts.model, ...FREE_MODELS])].filter(isFree)
-  const WAITS = [0, 3, 6, 12, 20, 30]
+  const WAITS = opts.quick ? [0, 2, 4, 8] : [0, 3, 6, 12, 20, 30]
   for (let i = 0; i <= WAITS.length; i++) {
     if (res.ok) {
       const completion = await res.json().catch(() => ({}))
