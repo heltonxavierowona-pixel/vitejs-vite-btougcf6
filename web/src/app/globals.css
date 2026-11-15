@@ -75,3 +75,17 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Finition visuelle « Numera Topaz » (couche additive)
+   ============================================================ */
+:root{--color-primary:#087a5b!important;--color-primaryhover:#066348!important;--color-primarysoft:#e5f4ee!important;--color-brandnavy:#102b46!important;--color-surface:#f4f7f8!important;--color-line:#e1e8ed!important}
+body{background:linear-gradient(135deg,#f6f9fb 0%,#eef4f4 100%)}
+button{transition:transform .18s,box-shadow .18s,background .18s}
+button:not(:disabled):hover{filter:brightness(.98)}
+/* Cases à cocher et boutons radio exclus : la hauteur minimale les déformerait. */
+input:not([type="checkbox"]):not([type="radio"]),select,textarea{border-radius:12px!important;border-color:#dce5e9!important;background:#fff!important;min-height:44px}
+:focus-visible{outline:3px solid #69c8a5;outline-offset:2px}
+table{border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:14px}
+thead th{background:#f0f5f7;color:#506477;font-size:.78rem;text-transform:uppercase;letter-spacing:.055em}
+tbody tr:hover{background:#f5faf8}
