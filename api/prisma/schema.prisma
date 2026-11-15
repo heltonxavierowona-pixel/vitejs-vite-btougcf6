@@ -1,0 +1,857 @@
+// ============================================================
+//  SaaS Facturation normalisée & Déclaration TVA — Cameroun
+//  Schéma Prisma — socle multi-tenant (PME + cabinets)
+//
+//  RÈGLES STRUCTURANTES :
+//  1. Tous les montants sont des Int, exprimés en CENTIMES de FCFA.
+//     Jamais de Float/Decimal flottant sur de l'argent.
+//  2. Une facture VALIDATED est immuable. Correction = avoir (CREDIT_NOTE).
+//  3. Toute donnée métier est rattachée à une Entity (entityId).
+//     Aucune requête métier ne doit s'exécuter sans filtre entityId.
+//  4. Les suppressions sont logiques (deletedAt), jamais physiques.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  // native : développement et Docker ; rhel-openssl-3.0.x : fonctions Vercel
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+//  TENANT : ORGANISATION
+// ============================================================
+
+enum OrganizationType {
+  ENTREPRISE // PME qui gère sa propre comptabilité : 1 seule Entity
+  CABINET    // Cabinet comptable / CGA : portefeuille de N Entities
+}
+
+model Organization {
+  id        String           @id @default(uuid())
+  name      String
+  type      OrganizationType
+  slug      String           @unique
+
+  // Contact de facturation de l'abonnement
+  billingEmail String
+  billingPhone String
+
+  locale   String @default("fr")
+  timezone String @default("Africa/Douala")
+  currency String @default("XAF")
+
+  entities     Entity[]
+  memberships  Membership[]
+  invitations  Invitation[]
+  subscription Subscription?
+  payments     Payment[]
+  paymentRequests PaymentRequest[]
+  auditLogs    AuditLog[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([type])
+  @@map("organizations")
+}
+
+// ============================================================
+//  ENTITÉ CONTRIBUABLE (l'entreprise réelle auprès de la DGI)
+// ============================================================
+
+enum TaxRegime {
+  IGS          // Impôt Général Synthétique
+  RSI          // Régime Simplifié
+  REEL_NORMAL  // Réel normal — télédéclaration obligatoire
+}
+
+enum LegalForm {
+  EI
+  ETS
+  SARL
+  SARLU
+  SA
+  SAS
+  GIE
+  ASSOCIATION
+  AUTRE
+}
+
+model Entity {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  // Identification fiscale
+  niu          String    @unique // Numéro d'Identifiant Unique DGI
+  legalName    String
+  tradeName    String?
+  legalForm    LegalForm
+  rccm         String? // Registre du Commerce
+  taxRegime    TaxRegime
+  taxCenter    String? // Centre des impôts de rattachement
+  isVatSubject Boolean   @default(false)
+
+  // Coordonnées (obligatoires sur facture normalisée)
+  address   String
+  city      String
+  poBox     String?
+  phone     String
+  email     String?
+  activity  String? // Activité principale
+
+  // Paramètres de facturation
+  invoicePrefix     String  @default("FA")
+  invoiceNextNumber Int     @default(1)
+  creditNotePrefix  String  @default("AV")
+  creditNoteNextNum Int     @default(1)
+  // Achats : numéro d'enregistrement interne, séquence distincte
+  // pour ne jamais créer de trou dans la numérotation des ventes.
+  purchasePrefix    String  @default("AC")
+  purchaseNextNum   Int     @default(1)
+  logoUrl           String?
+  fiscalYearStart   Int     @default(1) // mois de début d'exercice
+
+  customers      Customer[]
+  suppliers      Supplier[]
+  products       Product[]
+  invoices       Invoice[]
+  declarations   TaxDeclaration[]
+  assignments    EntityAssignment[]
+  deadlines      Deadline[]
+  documents      Document[]
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@map("entities")
+}
+
+// ============================================================
+//  UTILISATEURS & DROITS
+// ============================================================
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  phone        String? // non unique : un numéro peut être partagé (cabinet, famille)
+  passwordHash String
+  firstName    String
+  lastName     String
+  avatarUrl    String?
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  isActive        Boolean   @default(true)
+
+  memberships Membership[]
+  auditLogs   AuditLog[]
+  sessions    Session[]
+  passwordResets PasswordResetToken[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("users")
+}
+
+enum Role {
+  OWNER        // Créateur de l'organisation — tous les droits
+  ADMIN        // Gestion utilisateurs + entités
+  ACCOUNTANT   // Collaborateur cabinet : saisie + déclarations
+  OPERATOR     // Saisie de factures uniquement
+  VIEWER       // Lecture seule
+}
+
+model Membership {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  role           Role
+
+  // Si vide => accès à toutes les entités de l'organisation.
+  // Sinon => accès restreint aux entités listées (cas collaborateur cabinet).
+  assignments EntityAssignment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+model EntityAssignment {
+  id           String     @id @default(uuid())
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  entityId     String
+  entity       Entity     @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([membershipId, entityId])
+  @@index([entityId])
+  @@map("entity_assignments")
+}
+
+model Invitation {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  email          String
+  role           Role
+  token          String       @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("invitations")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // empreinte SHA-256 du jeton de rafraîchissement
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ============================================================
+//  TIERS & CATALOGUE
+// ============================================================
+
+model Customer {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  name         String
+  niu          String? // Obligatoire sur facture si client assujetti
+  isVatSubject Boolean @default(false)
+  // Client tenu de retenir la TVA à la source (CGI art. 149-2) :
+  // État, collectivités, entreprises publiques, entreprises listées.
+  withholdsVat Boolean @default(false)
+  address      String?
+  city         String?
+  phone        String?
+  email        String?
+  notes        String?
+
+  invoices Invoice[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([entityId])
+  @@index([entityId, name])
+  @@map("customers")
+}
+
+model Supplier {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  name         String
+  niu          String?
+  isVatSubject Boolean @default(false)
+  address      String?
+  city         String?
+  phone        String?
+  email        String?
+
+  invoices Invoice[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([entityId])
+  @@map("suppliers")
+}
+
+enum VatRate {
+  STANDARD // 19,25 %
+  ZERO     // 0 % — exportations
+  EXEMPT   // Exonéré
+}
+
+model Product {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  reference   String?
+  label       String
+  description String?
+  unitPrice   Int     @default(0) // centimes FCFA, HT
+  unit        String  @default("unité")
+  vatRate     VatRate @default(STANDARD)
+  isService   Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([entityId])
+  @@unique([entityId, reference])
+  @@map("products")
+}
+
+// ============================================================
+//  FACTURES
+// ============================================================
+
+enum InvoiceDirection {
+  SALE     // Vente — TVA collectée
+  PURCHASE // Achat — TVA déductible
+}
+
+enum InvoiceType {
+  INVOICE
+  CREDIT_NOTE // Avoir
+  PROFORMA
+}
+
+enum InvoiceStatus {
+  DRAFT     // Modifiable
+  VALIDATED // IMMUABLE — plus aucune modification autorisée
+  SENT
+  PAID
+  PARTIALLY_PAID
+  CANCELLED // Annulée par un avoir
+}
+
+model Invoice {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  direction InvoiceDirection
+  type      InvoiceType      @default(INVOICE)
+  status    InvoiceStatus    @default(DRAFT)
+
+  // Numérotation séquentielle PAR ENTITÉ, attribuée à la validation
+  // (ventes : FA-/AV- ; achats : numéro d'enregistrement AC-)
+  number      String?
+  // Achats : numéro porté par la facture du fournisseur
+  supplierReference String?
+  issuedAt    DateTime
+  dueAt       DateTime?
+  validatedAt DateTime?
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  // Dénormalisation : l'identité du tiers est figée à la validation
+  // (une facture émise ne doit pas changer si le client est renommé)
+  partyName    String?
+  partyNiu     String?
+  partyAddress String?
+
+  // Achats : TVA exclue du droit à déduction (CGI art. 144 :
+  // hébergement, restauration, réception, véhicule de tourisme…)
+  vatNonDeductible Boolean @default(false)
+
+  // Totaux en centimes FCFA
+  subtotalExclVat Int @default(0)
+  vatAmount       Int @default(0)
+  totalInclVat    Int @default(0)
+  paidAmount      Int @default(0)
+
+  currency String @default("XAF")
+  notes    String?
+  terms    String?
+
+  // Facturation normalisée DGI
+  fiscalStamp   String? // Référence de la facture sur le système de facturation électronique DGI
+  qrCodePayload String?
+  certifiedAt   DateTime?
+
+  // Lien avoir -> facture d'origine
+  originalInvoiceId String?
+  originalInvoice   Invoice?  @relation("CreditNoteOf", fields: [originalInvoiceId], references: [id])
+  creditNotes       Invoice[] @relation("CreditNoteOf")
+
+  lines    InvoiceLine[]
+  payments InvoicePayment[]
+
+  declarationId String?
+  declaration   TaxDeclaration? @relation(fields: [declarationId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([entityId, number])
+  @@index([entityId, direction, issuedAt])
+  @@index([entityId, status])
+  @@index([declarationId])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  productId   String?
+  label       String
+  description String?
+  quantity    Int     @default(1000) // millièmes : 1.5 => 1500
+  unitPrice   Int // centimes FCFA, HT
+  discountPct Int     @default(0) // centièmes de % : 12,5% => 1250
+  vatRate     VatRate @default(STANDARD)
+  // Prestation de services : TVA exigible à l'encaissement
+  // (CGI art. 134-1-b). Livraison de biens : à la livraison.
+  isService   Boolean @default(false)
+  // TVA prise en charge par l'État (marchés publics) : mention
+  // « Prise en charge État » sur la ligne (CGI art. 150).
+  stateBorne  Boolean @default(false)
+
+  // Calculés et figés à la validation
+  lineExclVat Int @default(0)
+  lineVat     Int @default(0)
+  lineInclVat Int @default(0)
+
+  position Int @default(0)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY_MTN
+  MOBILE_MONEY_ORANGE
+  BANK_TRANSFER
+  CHECK
+  OTHER
+}
+
+model InvoicePayment {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  amount    Int // centimes FCFA
+  // TVA retenue à la source par le client (CGI art. 149-2) : elle
+  // solde la facture comme un encaissement, et se déduit de la
+  // TVA due sur présentation de l'attestation.
+  vatWithheld Int @default(0)
+  method    PaymentMethod
+  reference String?
+  paidAt    DateTime
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_payments")
+}
+
+// ============================================================
+//  DÉCLARATIONS FISCALES
+// ============================================================
+
+enum DeclarationType {
+  VAT_MONTHLY // TVA mensuelle — dépôt avant le 15 du mois suivant
+  VAT_NIL     // Déclaration « néant » (obligatoire, CGI art. 152-5)
+}
+
+enum DeclarationStatus {
+  PENDING    // À faire
+  IN_PROGRESS
+  READY      // Document généré, prêt à déposer
+  SUBMITTED  // Déposé sur le portail DGI
+  PAID
+  LATE
+}
+
+model TaxDeclaration {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  type   DeclarationType   @default(VAT_MONTHLY)
+  status DeclarationStatus @default(PENDING)
+
+  periodYear  Int
+  periodMonth Int // 1-12
+  dueDate     DateTime // 15 du mois suivant
+
+  // Montants en centimes FCFA
+  vatCollected  Int @default(0) // TVA sur ventes
+  vatDeductible Int @default(0) // TVA sur achats
+  vatCredit     Int @default(0) // Crédit antérieur reporté
+  vatDue        Int @default(0) // Net à payer (0 si crédit)
+  carryForward  Int @default(0) // Crédit reportable période suivante
+  vatWithheld   Int @default(0) // TVA retenue à la source par les clients
+  vatExcluded   Int @default(0) // TVA d'achats exclue du droit à déduction
+
+  turnoverExclVat Int @default(0)
+
+  submittedAt DateTime?
+  submittedBy String?
+  receiptRef  String? // Référence / accusé du portail DGI
+  receiptUrl  String?
+  paidAt      DateTime?
+
+  invoices  Invoice[]
+  documents Document[]
+
+  notes String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([entityId, type, periodYear, periodMonth])
+  @@index([entityId, status])
+  @@index([dueDate, status])
+  @@map("tax_declarations")
+}
+
+// ============================================================
+//  ÉCHÉANCIER (moteur du dashboard cabinet)
+// ============================================================
+
+enum DeadlineKind {
+  VAT
+  IS
+  IRPP
+  DSF
+  CNPS
+  PATENTE
+  CUSTOM
+}
+
+model Deadline {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  kind        DeadlineKind
+  label       String
+  dueDate     DateTime
+  completedAt DateTime?
+  reminderSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entityId, dueDate])
+  @@index([dueDate, completedAt])
+  @@map("deadlines")
+}
+
+// ============================================================
+//  DOCUMENTS (pièces jointes, PDF générés, accusés)
+// ============================================================
+
+enum DocumentKind {
+  INVOICE_PDF
+  DECLARATION_PDF
+  RECEIPT
+  ATTACHMENT
+}
+
+model Document {
+  id       String @id @default(uuid())
+  entityId String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  kind        DocumentKind
+  filename    String
+  storagePath String
+  mimeType    String
+  sizeBytes   Int
+  checksum    String?
+
+  declarationId String?
+  declaration   TaxDeclaration? @relation(fields: [declarationId], references: [id])
+
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+  deletedAt  DateTime?
+
+  @@index([entityId])
+  @@index([declarationId])
+  @@map("documents")
+}
+
+// ============================================================
+//  ABONNEMENT & PAIEMENT (Flutterwave)
+//
+//  NOTE : le Mobile Money ne permet généralement pas le
+//  prélèvement automatique. Le modèle prévoit donc un cycle
+//  de RELANCE explicite plutôt qu'un débit silencieux.
+// ============================================================
+
+enum PlanCode {
+  FREE
+  PME_STARTER
+  PME_PRO
+  CABINET_S // jusqu'à 10 entités
+  CABINET_M // jusqu'à 30 entités
+  CABINET_L // illimité
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE // échéance dépassée, relances en cours
+  SUSPENDED
+  CANCELLED
+}
+
+model Subscription {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  plan   PlanCode
+  status SubscriptionStatus @default(TRIALING)
+
+  maxEntities Int @default(1)
+  maxUsers    Int @default(2)
+
+  priceAmount Int    @default(0) // centimes FCFA / période
+  currency    String @default("XAF")
+  intervalMonths Int @default(1)
+
+  trialEndsAt      DateTime?
+  currentPeriodStart DateTime  @default(now())
+  currentPeriodEnd   DateTime
+  gracePeriodEnd     DateTime?
+  cancelledAt        DateTime?
+
+  remindersSent Int @default(0)
+  lastReminderAt DateTime?
+
+  // Moyen de renouvellement. Stripe (carte) renouvelle tout seul
+  // chaque mois ; Flutterwave (Mobile Money) passe par des relances.
+  provider             PaymentProvider?
+  stripeCustomerId     String?          @unique
+  stripeSubscriptionId String?          @unique
+  cancelAtPeriodEnd    Boolean          @default(false)
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+enum PaymentProvider {
+  FLUTTERWAVE
+  STRIPE
+  NOTCHPAY
+  NEERO
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  EXPIRED  // jamais payé dans le délai
+  CANCELED // annulé par le client ou par nous
+}
+
+model Payment {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  provider    PaymentProvider @default(FLUTTERWAVE)
+  status      PaymentStatus   @default(PENDING)
+  amount      Int
+  currency    String          @default("XAF")
+  method      PaymentMethod?
+
+  // Références fournisseur
+  txRef         String  @unique // notre référence, envoyée au provider
+  providerTxId  String? @unique // une transaction ne crédite qu'un seul paiement
+  providerRaw   Json?
+  failureReason String?
+
+  // Page de paiement hébergée et période couverte (Neero)
+  paymentUrl  String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([provider, status, createdAt])
+  @@map("payments")
+}
+
+// ============================================================
+//  DEMANDES DE PAIEMENT MANUELLES (lien Neero)
+//
+//  Le client choisit une formule ; l'administrateur génère un
+//  lien de paiement dans Neero et le colle dans l'écran admin ;
+//  le client paie puis saisit la référence de transaction ;
+//  l'administrateur vérifie dans Neero et valide.
+// ============================================================
+
+enum PaymentRequestStatus {
+  AWAITING_LINK       // demande reçue, lien à générer
+  LINK_SENT           // lien envoyé, en attente du paiement
+  REFERENCE_SUBMITTED // référence saisie, à vérifier
+  VALIDATED
+  CANCELLED
+}
+
+enum PaymentRequestKind {
+  NEW     // souscription ou changement de formule
+  RENEWAL // échéance suivante, créée par les relances
+}
+
+model PaymentRequest {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  requestedById  String?
+
+  plan   PlanCode
+  amount Int // centimes FCFA
+  kind   PaymentRequestKind   @default(NEW)
+  status PaymentRequestStatus @default(AWAITING_LINK)
+
+  paymentLink String?
+  linkSentAt  DateTime?
+
+  // Une référence ne peut servir qu'une fois.
+  transactionRef       String?   @unique
+  referenceSubmittedAt DateTime?
+  // Dernier refus de référence, affiché au client.
+  rejectionReason String?
+
+  decidedAt DateTime?
+  paymentId String?   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([organizationId, status])
+  @@map("payment_requests")
+}
+
+// Réglages de la plateforme modifiables depuis l'écran admin.
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model WebhookEvent {
+  id         String   @id @default(uuid())
+  provider   String
+  eventType  String
+  externalId String?
+  payload    Json
+  signature  String?
+  signatureValid Boolean?
+  processedAt DateTime?
+  error      String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([provider, externalId])
+  @@index([processedAt])
+  @@map("webhook_events")
+}
+
+// ============================================================
+//  JOURNAL D'AUDIT — obligatoire en contexte comptable
+// ============================================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  VALIDATE
+  CANCEL
+  SUBMIT
+  LOGIN
+  EXPORT
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  entityId       String?
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id])
+
+  action     AuditAction
+  targetType String // "Invoice", "TaxDeclaration", ...
+  targetId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// Lien « mot de passe oublié » : seul le hachage du jeton est
+// conservé, valable une heure et une seule fois.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
